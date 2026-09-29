@@ -1,0 +1,46 @@
+# BioFlow-X laboratory floor plan.
+#
+# Grid coordinates: x = column (0..width-1, left to right), y = row (0..height-1, top to bottom).
+# Each equipment entry is its footprint rectangle (robots cannot enter) plus an
+# access point: the free cell next to it where a robot docks to pick/place.
+#
+# Positions exist for more equipment than configs/equipment.yaml currently
+# builds (4 incubators, 2 media, 2 imaging), so equipment counts can be raised
+# for larger scenarios without redrawing the lab. Unused positions are ignored.
+#
+# Render it with:  python -m bioflow.robotics configs/laboratory.yaml
+
+grid:
+  width: 30
+  height: 20
+  cell_size_m: 0.5
+
+movement:
+  robot_speed_m_per_min: 12.0   # 0.2 m/s, a cautious speed for robots carrying plates
+
+equipment:
+  # Incubator wall along the top.
+  INCUBATOR_01: {x: 2,  y: 0, width: 4, height: 2, access: [3, 2]}
+  INCUBATOR_02: {x: 8,  y: 0, width: 4, height: 2, access: [9, 2]}
+  INCUBATOR_03: {x: 14, y: 0, width: 4, height: 2, access: [15, 2]}
+  INCUBATOR_04: {x: 20, y: 0, width: 4, height: 2, access: [21, 2]}
+
+  # Plate storage on the left wall.
+  STORAGE_01:   {x: 0, y: 7, width: 3, height: 6, access: [3, 9]}
+
+  # Processing stations on the right wall.
+  MEDIA_01:     {x: 27, y: 4,  width: 3, height: 2, access: [26, 4]}
+  MEDIA_02:     {x: 27, y: 7,  width: 3, height: 2, access: [26, 7]}
+  IMAGING_01:   {x: 27, y: 11, width: 3, height: 2, access: [26, 11]}
+  IMAGING_02:   {x: 27, y: 14, width: 3, height: 2, access: [26, 14]}
+
+  # Waste at the bottom.
+  WASTE_01:     {x: 13, y: 18, width: 4, height: 2, access: [14, 17]}
+
+blocked:
+  - {x: 10, y: 8,  width: 10, height: 3}   # central lab bench
+  - {x: 6,  y: 14, width: 2,  height: 2}   # structural pillar
+
+zones:
+  # Robots slow down in front of incubator doors, so crossing this strip costs more.
+  - {name: incubator_clearance, x: 0, y: 2, width: 25, height: 2, cost: 1.5}
