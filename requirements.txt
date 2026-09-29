@@ -3,6 +3,7 @@
 #   PyYAML            -> Phase 2+ (configuration and protocols)
 #   fastapi, uvicorn  -> Phase 21 (REST API)
 #   streamlit, matplotlib -> Phases 22-23 (dashboard, digital-twin view)
+#   pandas            -> Phase 24 (benchmark analysis; also required by streamlit)
 # Planned later: scikit-learn (26, optional).
 # SQLite ships with Python, so the database needs no install.
 PyYAML>=6.0
@@ -10,3 +11,4 @@ fastapi>=0.115
 uvicorn>=0.30
 streamlit>=1.40
 matplotlib>=3.8
+pandas>=2.0

@@ -11,6 +11,7 @@ from bioflow.analytics.summary import RunSummary, summarize
 from bioflow.control.dispatcher import Dispatcher
 from bioflow.control.resource_manager import ResourceManager
 from bioflow.control.state_manager import StateManager
+from bioflow.core.exceptions import CapacityExceededError
 from bioflow.core.simulation import SimulationEngine
 from bioflow.domain import EquipmentKind, Experiment
 from bioflow.equipment.config import EquipmentConfig
@@ -31,6 +32,8 @@ from bioflow.robotics.travel import TravelTimeModel
 from bioflow.scheduling.base_scheduler import Scheduler
 
 EXPERIMENT_ARRIVAL = "EXPERIMENT_ARRIVAL"
+DEFERRED_EVENT = "EXPERIMENT_DEFERRED"  # payload: experiment_id, reason, retry_in_min
+ARRIVAL_RETRY_MIN = 5.0
 SOURCE_ID = "LABORATORY"
 
 
@@ -109,7 +112,17 @@ class Laboratory:
         return fault
 
     def _arrive(self, experiment: Experiment) -> None:
-        self.dispatcher.submit(experiment)
+        try:
+            self.dispatcher.submit(experiment)
+        except CapacityExceededError as error:
+            # Storage cannot take the plates right now (full, or out of service after a fault).
+            # Like a delivery waiting at a closed loading dock: try again shortly instead of failing.
+            self.engine.publish(DEFERRED_EVENT, SOURCE_ID, payload={
+                "experiment_id": experiment.experiment_id, "reason": str(error), "retry_in_min": ARRIVAL_RETRY_MIN,
+            })
+            self.engine.schedule(ARRIVAL_RETRY_MIN, EXPERIMENT_ARRIVAL, SOURCE_ID,
+                                 lambda event: self._arrive(experiment),
+                                 payload={"experiment_id": experiment.experiment_id})
         self.monitor.start()  # it may have stopped while the lab was idle
 
     def run(self, until: float | None = None) -> RunSummary:

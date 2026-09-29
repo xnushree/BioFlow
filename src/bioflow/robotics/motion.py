@@ -228,6 +228,7 @@ class GridMotion:
             self._wake(motion.path[0])
         if motion.waiting_for is not None:
             self._stop_waiting(motion)
+        self._reconsider_waiters(motion)  # anyone queued behind it must now go around
 
     def resume(self, robot_id: str) -> None:
         motion = self._robots[robot_id]
@@ -278,6 +279,8 @@ class GridMotion:
             callback, motion.goal, motion.on_arrival = motion.on_arrival, None, None
             if callback is not None:
                 self._context.schedule(0.0, "ROBOT_ARRIVED", motion.robot_id, lambda event: callback())
+            elif motion.idle:
+                self._reconsider_waiters(motion)  # it has just parked: it will not move on by itself
             return
         if not motion.path:
             try:
@@ -345,6 +348,22 @@ class GridMotion:
             motion.waiting_for = None
             if not motion.stepping:
                 self._advance(motion)
+
+    def _reconsider_waiters(self, blocker: _RobotMotion) -> None:
+        """``blocker`` has become a stationary obstacle (parked or broken down).
+
+        Robots already queued for its cell started waiting while it was still moving, so waiting
+        was right at the time; now it would be forever. Give each of them the same treatment a
+        new arrival would get: go around a broken-down robot, go around or nudge a parked one.
+        """
+        for waiter_id in list(self._waiters.get(blocker.cell, [])):
+            waiter = self._robots[waiter_id]
+            if waiter.waiting_for != blocker.cell:
+                continue
+            if blocker.frozen:
+                self._reroute(waiter, avoid={blocker.cell}, reason=f"{blocker.robot_id} broken down")
+            else:
+                self._get_past_idle_robot(waiter, blocker)
 
     def _get_past_idle_robot(self, motion: _RobotMotion, blocker: _RobotMotion) -> None:
         if self._reroute(motion, avoid={blocker.cell}, reason=f"idle {blocker.robot_id} in the way"):

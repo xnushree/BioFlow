@@ -254,3 +254,28 @@ def test_more_robots_than_parking_cells_is_a_configuration_error(engine: Simulat
 def test_parking_validation(parking: list[Cell], message: str) -> None:
     with pytest.raises(ConfigurationError, match=message):
         LabMap(5, 1, 0.5, parking=parking, blocked=[Rect(3, 0, 1, 1)], placements=[place("A_01", 0, 0, (1, 0))])
+
+
+def test_waiter_is_not_stranded_when_the_robot_ahead_parks(engine: SimulationEngine) -> None:
+    """Regression (found by the Phase 24 benchmark): R1 starts waiting for a cell while R2 is still
+    driving into it; R2 then parks there for good. R1 must be re-evaluated and nudge R2 aside,
+    instead of waiting forever."""
+    # Corridor along row 0; the only side pocket is (2, 1). R2 parks in the corridor at (2, 0).
+    walls = [Rect(x, 1, 1, 1) for x in (0, 1, 4, 5)]
+    lab = LabMap(6, 2, 0.5, blocked=walls, parking=[(0, 0), (2, 0)], placements=[
+        place("DEST_01", 5, 0, (4, 0)), place("SIDE_01", 3, 1, (3, 0)),
+    ])
+    motion = make_grid(engine, lab, robots=2)
+    arrived: list[str] = []
+    # R2 visits SIDE_01 and then drives home to its corridor parking cell ...
+    motion.travel("R2", "", "SIDE_01", lambda: motion.robot_idle("R2"))
+    # (R2 is back at SIDE_01's access (3, 0) at t=1 and steps home into (2, 0) during t=1..2.)
+    engine.run(until=0.5)
+    # ... while R1 heads down the corridor and reaches (1, 0) at t=1.5, asking for (2, 0) mid-step.
+    motion.travel("R1", "", "DEST_01", lambda: arrived.append("R1"))
+
+    engine.run()
+
+    assert arrived == ["R1"]
+    assert motion.position("R1") == (4, 0)
+    assert motion.position("R2") == (2, 1)  # nudged into the pocket

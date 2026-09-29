@@ -10,6 +10,7 @@ detection:
   heartbeat_timeout_min: 3.0             # silence longer than this is a symptom
   transport_timeout_factor: 3.0          # a transport is overdue after 3x its expected time ...
   transport_timeout_margin_min: 10.0     # ... plus 10 minutes (congestion causes normal delays)
+  transport_stall_min: 10.0              # ... and (on the map) the robot has not moved for 10 minutes
   processing_timeout_factor: 1.5
   processing_timeout_margin_min: 5.0
   excursion_confirmations: 2             # consecutive out-of-tolerance readings before diagnosing

@@ -1,0 +1,69 @@
+# Scheduler benchmarks. Each workload is a *recipe*; every seed turns it into a
+# different concrete scenario, and every scheduler runs on exactly the same
+# scenarios, so comparisons are paired. Paths are relative to the project root.
+#
+# Run:  python simulation/benchmark.py            (all workloads, all seeds)
+#       python simulation/benchmark.py --workloads A B --seeds 3
+
+defaults:
+  equipment_config: configs/equipment.yaml
+  laboratory_config: configs/laboratory.yaml
+  protocol_dir: protocols
+  scheduling_config: configs/scheduling.yaml
+  fault_config: configs/faults.yaml
+  transport_estimate_min: 3.0       # per step, used only to set deadlines relative to nominal duration
+
+seeds: [1, 2, 3, 4, 5]
+schedulers: [fifo, priority, deadline, cost]
+
+workloads:
+  A:
+    description: Light load - 10 plates, 2 robots, 2 incubators, 1 imaging station.
+    plates: 10
+    experiment_plates: [2, 5]
+    arrival_window_min: 120
+    protocol_mix: {basic_experiment: 2, imaging_experiment: 1}
+    priority_range: [0, 3]
+    deadline_slack: [1.3, 2.0]
+    equipment: {robots: {count: 2}, incubators: {count: 2}, media_stations: {count: 1}, imaging_stations: {count: 1}}
+
+  B:
+    description: Moderate load - 50 plates, 3 robots, 4 incubators, 2 imaging stations.
+    plates: 50
+    experiment_plates: [3, 8]
+    arrival_window_min: 480
+    protocol_mix: {basic_experiment: 2, imaging_experiment: 1, stress_test: 1}
+    priority_range: [0, 5]
+    deadline_slack: [1.2, 1.8]
+    equipment: {robots: {count: 3}, incubators: {count: 4}, media_stations: {count: 2}, imaging_stations: {count: 2}}
+
+  C:
+    description: 100 plates with tight deadlines and three random equipment failures.
+    plates: 100
+    experiment_plates: [4, 10]
+    arrival_window_min: 600
+    protocol_mix: {basic_experiment: 2, imaging_experiment: 1, stress_test: 1}
+    priority_range: [0, 5]
+    deadline_slack: [1.05, 1.4]
+    equipment: {robots: {count: 3}, incubators: {count: 4}, media_stations: {count: 2}, imaging_stations: {count: 2}}
+    faults:
+      count: 3
+      types: [INCUBATOR_FAILURE, IMAGING_FAILURE, MEDIA_STATION_FAILURE, ROBOT_FAILURE]
+      window_min: [60, 1200]
+      duration_min: [30, 180]
+
+  D:
+    description: 220 plates, 4 robots, and six faults striking within the same two hours.
+    plates: 220
+    experiment_plates: [5, 12]
+    arrival_window_min: 900
+    protocol_mix: {basic_experiment: 2, imaging_experiment: 1, stress_test: 2}
+    priority_range: [0, 5]
+    deadline_slack: [1.2, 2.0]
+    equipment: {robots: {count: 4}, incubators: {count: 4}, media_stations: {count: 2}, imaging_stations: {count: 2}}
+    faults:
+      count: 6
+      types: [INCUBATOR_FAILURE, TEMPERATURE_EXCURSION, IMAGING_FAILURE, MEDIA_STATION_FAILURE, ROBOT_FAILURE,
+              ROBOT_TIMEOUT, COMMUNICATION_TIMEOUT]
+      window_min: [300, 420]
+      duration_min: [60, 240]

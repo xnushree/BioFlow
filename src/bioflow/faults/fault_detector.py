@@ -108,6 +108,8 @@ class FaultDetector:
         self._heartbeat_interval = heartbeat_interval_min
         self._nominal_step = nominal_step_min
         self._recent_moves: dict[str, deque[float]] = {}  # robot -> recent step drive-time ratios
+        self._blocked_by: dict[str, str] = {}  # robot -> robot it is currently queued behind
+        self._last_moved: dict[str, float] = {}
         self._detections: list[Detection] = []
         self._active: dict[tuple[str, str], Detection] = {}
         self._ids = itertools.count(1)
@@ -133,6 +135,7 @@ class FaultDetector:
         bus.subscribe(EquipmentEvent.PLATE_PICKED, self._on_plate_picked)
         bus.subscribe(MaintenanceEvent.MAINTENANCE_COMPLETED, self._on_maintenance)
         bus.subscribe(MotionEvent.ROBOT_MOVED, self._on_robot_moved)
+        bus.subscribe(MotionEvent.ROBOT_WAITING, self._on_robot_waiting)
         bus.subscribe(ALL_EVENTS, self._on_any_event)
 
     # ------------------------------------------------------------------ queries
@@ -165,8 +168,11 @@ class FaultDetector:
             if silence > s.heartbeat_timeout_min and (eid, "link") not in self._active:
                 self._detect(eid, "link", *self._classify_silence(eid, last, silence))
         for robot, timer in self._transports.items():
+            if self._faulted_blocker(robot) is not None:
+                timer.started_at = now  # time stuck behind a diagnosed fault is explained: don't count it
+                continue
             limit = timer.expected_min * s.transport_timeout_factor + s.transport_timeout_margin_min
-            if now - timer.started_at > limit and (robot, "link") not in self._active:
+            if now - timer.started_at > limit and (robot, "link") not in self._active and self._stalled(robot, now):
                 self._detect(robot, "transport", FaultType.ROBOT_TIMEOUT,
                              f"transport running {now - timer.started_at:.1f} min, expected ~{timer.expected_min:.1f}")
         for station, timer in list(self._processing.items()):
@@ -225,7 +231,34 @@ class FaultDetector:
     def forget_transport(self, robot_id: str) -> None:
         self._transports.pop(robot_id, None)
 
+    def _stalled(self, robot: str, now: float) -> bool:
+        """With position tracking, an overdue robot only counts as stuck if it has not moved for a while
+        (a robot creeping through heavy traffic is progressing; a slow drive has its own rule)."""
+        if self._nominal_step is None:
+            return True  # no position tracking: elapsed time is all there is
+        return now - self._last_moved.get(robot, -math.inf) > self.settings.transport_stall_min
+
+    def _on_robot_waiting(self, event: Event) -> None:
+        self._blocked_by[event.source] = event.payload["blocked_by"]
+
+    def _faulted_blocker(self, robot: str) -> str | None:
+        """The robot (directly or further up a queue) with an active diagnosis that ``robot`` is stuck behind.
+
+        A delay explained by a known fault elsewhere is a *consequential* symptom, not a new fault:
+        alarming on it would take a healthy robot out of service.
+        """
+        seen = {robot}
+        blocker = self._blocked_by.get(robot)
+        while blocker is not None and blocker not in seen:
+            if self.active_detections(blocker):
+                return blocker
+            seen.add(blocker)
+            blocker = self._blocked_by.get(blocker)
+        return None
+
     def _on_robot_moved(self, event: Event) -> None:
+        self._blocked_by.pop(event.source, None)  # moving again: no longer stuck behind anyone
+        self._last_moved[event.source] = event.timestamp
         if self._nominal_step is None:
             return
         s = self.settings

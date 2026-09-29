@@ -19,6 +19,7 @@ from bioflow.robotics.motion import MotionEvent
 
 KINDS = {
     "ROBOT_01": EquipmentKind.ROBOT,
+    "ROBOT_02": EquipmentKind.ROBOT,
     "INCUBATOR_01": EquipmentKind.INCUBATOR,
     "IMAGING_01": EquipmentKind.IMAGING_STATION,
 }
@@ -273,3 +274,43 @@ def test_diagnostics_scoring() -> None:
 def test_invalid_fault_config(data: dict[str, Any], message: str) -> None:
     with pytest.raises(ConfigurationError, match=message):
         parse_fault_config(data)
+
+
+# -------------------------------------------- consequential alarm suppression
+def test_delay_behind_a_diagnosed_robot_is_not_blamed_on_the_waiting_robot(engine: SimulationEngine) -> None:
+    """ROBOT_01 queues behind a broken-down robot for longer than its transport limit: no new alarm."""
+    feed = Feed(engine, transport_timeout_factor=3.0, transport_timeout_margin_min=4.0)  # limit 10 min
+    feed.at(0.5, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_01", plate_id="P1", source="A", destination="B")
+    feed.at(0.6, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_02", plate_id="P2", source="C", destination="B")
+    feed.at(1.0, MotionEvent.ROBOT_WAITING, "ROBOT_01", cell=(4, 0), blocked_by="ROBOT_02")
+    feed.heartbeats(until=40, silent={"ROBOT_02": 2})  # ROBOT_02 dies at t~2 and is diagnosed at ~5
+
+    detections = feed.run()
+
+    assert types(detections) == [("ROBOT_FAILURE", "ROBOT_02")]
+
+
+def test_time_behind_a_fault_is_excluded_once_the_blockage_clears(engine: SimulationEngine) -> None:
+    feed = Feed(engine, transport_timeout_factor=3.0, transport_timeout_margin_min=4.0, transport_stall_min=1.0)
+    feed.at(0.5, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_01", plate_id="P1", source="A", destination="B")
+    feed.at(0.6, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_02", plate_id="P2", source="C", destination="B")
+    feed.at(1.0, MotionEvent.ROBOT_WAITING, "ROBOT_01", cell=(4, 0), blocked_by="ROBOT_02")
+    feed.heartbeats(until=30, silent={"ROBOT_02": 2})
+    for t in range(3, 31):
+        if t >= 20:  # ROBOT_02 repaired at t=20: heartbeats resume
+            feed.at(t + 0.5, MonitoringEvent.HEARTBEAT, "ROBOT_02")
+
+    detections = feed.run()
+
+    # 30 min after the transport started, but only ~10 min since the blockage cleared at t=20.
+    assert ("ROBOT_TIMEOUT", "ROBOT_01") not in types(detections)
+
+
+def test_robot_creeping_through_traffic_is_not_stuck(engine: SimulationEngine) -> None:
+    feed = Feed(engine, transport_timeout_factor=3.0, transport_timeout_margin_min=4.0)  # limit 10, stall 10
+    feed.at(0.5, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_01", plate_id="P1", source="A", destination="B")
+    for t in range(2, 30, 4):  # a normal-speed step every few minutes: slow going, but progressing
+        feed.at(t, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.1, step_cost=1.0)
+    feed.heartbeats(until=30)
+
+    assert feed.run() == []

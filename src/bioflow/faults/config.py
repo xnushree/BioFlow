@@ -19,6 +19,7 @@ class DetectionSettings:
     heartbeat_timeout_min: float = 3.0  # silence longer than this is a symptom
     transport_timeout_factor: float = 3.0  # overdue if > factor x expected + margin
     transport_timeout_margin_min: float = 10.0
+    transport_stall_min: float = 10.0  # with position tracking: overdue only if also motionless this long
     processing_timeout_factor: float = 1.5
     processing_timeout_margin_min: float = 5.0
     excursion_confirmations: int = 2  # consecutive out-of-tolerance readings before diagnosing
@@ -36,6 +37,7 @@ class DetectionSettings:
                 "timeout factors must be >= 1")
         require(self.transport_timeout_margin_min >= 0 and self.processing_timeout_margin_min >= 0,
                 "timeout margins must be >= 0")
+        require(self.transport_stall_min > 0, "transport_stall_min must be positive")
         require(self.slow_step_factor > 1, "slow_step_factor must be > 1")
         for name in ("excursion_confirmations", "normal_confirmations", "pick_failure_threshold",
                      "slow_step_window"):
