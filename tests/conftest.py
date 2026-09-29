@@ -9,6 +9,10 @@ from bioflow.core.events import ALL_EVENTS, Event
 from bioflow.core.simulation import SimulationEngine
 from bioflow.core.state_machine import TransitionTable
 from bioflow.domain import CultureConditions, Plate, PlateState
+from bioflow.equipment.config import parse_equipment_config
+from bioflow.laboratory import Laboratory
+from bioflow.robotics.travel import ConstantTravelTime
+from bioflow.scheduling.registry import create_scheduler
 
 PlateFactory = Callable[..., Plate]
 
@@ -56,3 +60,24 @@ def assert_exact_transitions() -> Callable[[TransitionTable[Any], set[tuple[str,
         assert expected - actual == set(), "expected transitions missing"
 
     return check
+
+
+SMALL_LAB: dict[str, Any] = {
+    "robots": {"count": 2, "pick_time_min": 0.5, "place_time_min": 0.5},
+    "incubators": {"count": 2, "capacity": 10},
+    "media_stations": {"count": 1, "process_time_min": 15},
+    "imaging_stations": {"count": 1, "process_time_min": 10},
+    "storage": {"count": 1, "capacity": 50},
+    "waste_stations": {"count": 1, "capacity": 10},
+}
+
+
+@pytest.fixture
+def make_lab() -> Callable[..., Laboratory]:
+    """Build a fully wired Laboratory; override any SMALL_LAB section, e.g. robots={"count": 1, ...}."""
+
+    def factory(travel_min: float = 2.0, scheduler: str = "fifo", **sections: Any) -> Laboratory:
+        config = parse_equipment_config({**SMALL_LAB, **sections})
+        return Laboratory(config, create_scheduler(scheduler), ConstantTravelTime(travel_min))
+
+    return factory

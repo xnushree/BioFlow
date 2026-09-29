@@ -16,7 +16,7 @@ from typing import Any, Generic, TypeVar
 import yaml
 
 from bioflow.core.exceptions import ConfigurationError, ValidationError
-from bioflow.core.validation import require
+from bioflow.core.validation import is_int, is_number, require
 from bioflow.domain import CultureConditions
 from bioflow.domain.conditions import DEFAULT_CO2_PCT, DEFAULT_TEMPERATURE_C
 
@@ -151,12 +151,12 @@ def _parse_group(section: str, raw: Any, spec_cls: type, min_count: int) -> Equi
         )
 
     count = raw.get("count")
-    if not _is_int(count) or count < min_count:
+    if not is_int(count) or count < min_count:
         raise ConfigurationError(f"{section}: count must be an integer >= {min_count}, got {count!r}")
 
     settings = {key: value for key, value in raw.items() if key != "count"}
     for key, value in settings.items():
-        if not _is_number(value):
+        if not is_number(value):
             raise ConfigurationError(f"{section}.{key}: expected a number, got {value!r}")
     try:
         spec = spec_cls(**settings)
@@ -165,11 +165,3 @@ def _parse_group(section: str, raw: Any, spec_cls: type, min_count: int) -> Equi
     except ValidationError as error:
         raise ConfigurationError(f"{section}: {error}") from error
     return EquipmentGroup(count=count, spec=spec)
-
-
-def _is_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
-def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)

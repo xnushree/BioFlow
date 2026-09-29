@@ -14,12 +14,12 @@ All problems are collected and reported together rather than one per run.
 
 from __future__ import annotations
 
-import difflib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields
 from typing import Any
 
 from bioflow.core.exceptions import BioFlowError, ProtocolError
+from bioflow.core.validation import is_number, suggest
 from bioflow.domain import CultureConditions, Operation, Protocol, ProtocolStep
 
 REQUIRED_KEYS = ("protocol", "cell_type", "steps")
@@ -93,7 +93,7 @@ def _parse_conditions(raw: Any, issues: list[ValidationIssue]) -> CultureConditi
     before = len(issues)
     _check_keys(raw, (), CONDITION_KEYS, "conditions", issues)
     for key, value in raw.items():
-        if key in CONDITION_KEYS and not _is_number(value):
+        if key in CONDITION_KEYS and not is_number(value):
             issues.append(ValidationIssue(f"conditions.{key}", f"expected a number, got {value!r}"))
     if len(issues) > before:
         return None
@@ -130,11 +130,11 @@ def _parse_step(raw: Any, location: str, issues: list[ValidationIssue]) -> Proto
     if "operation" in raw and operation not in ALL_OPERATIONS:
         issues.append(ValidationIssue(
             f"{location}.operation",
-            f"unknown operation {operation!r}{_suggest(str(operation).upper(), PROTOCOL_OPERATIONS)}; "
+            f"unknown operation {operation!r}{suggest(str(operation).upper(), PROTOCOL_OPERATIONS)}; "
             f"expected one of {', '.join(PROTOCOL_OPERATIONS)}",
         ))
     duration = raw.get("duration_min")
-    if duration is not None and not _is_number(duration):
+    if duration is not None and not is_number(duration):
         issues.append(ValidationIssue(f"{location}.duration_min", f"expected a number, got {duration!r}"))
     synchronize = raw.get("synchronize", False)
     if not isinstance(synchronize, bool):
@@ -158,7 +158,7 @@ def _check_keys(
             issues.append(ValidationIssue(location, f"missing required key '{key}'"))
     for key in raw:
         if key not in allowed:
-            issues.append(ValidationIssue(location, f"unknown key '{key}'{_suggest(str(key), allowed)}"))
+            issues.append(ValidationIssue(location, f"unknown key '{key}'{suggest(str(key), allowed)}"))
 
 
 def _non_empty_string(data: Mapping[str, Any], key: str, issues: list[ValidationIssue]) -> str | None:
@@ -171,13 +171,6 @@ def _non_empty_string(data: Mapping[str, Any], key: str, issues: list[Validation
     return value
 
 
-def _suggest(value: str, options: Iterable[str]) -> str:
-    matches = difflib.get_close_matches(value, list(options), n=1)
-    return f" (did you mean '{matches[0]}'?)" if matches else ""
-
-
-def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _strip_prefix(message: str, name: str) -> str:

@@ -1,0 +1,24 @@
+# Normal operation: two experiments share the lab, the second arriving an hour later.
+# Run from the project root:  python simulation/run_simulation.py simulation/scenarios/basic_demo.yaml
+scenario: basic_demo
+description: 10 standard plates plus 4 time-lapse plates on the default equipment.
+seed: 42
+scheduler: fifo
+equipment_config: configs/equipment.yaml
+protocol_dir: protocols
+travel_time_min: 2.0
+
+experiments:
+  - id: EXP001
+    protocol: basic_experiment
+    plates: 10
+    priority: 1
+    submit_at_min: 0
+    deadline_min: 2400
+
+  - id: EXP002
+    protocol: imaging_experiment
+    plates: 4
+    priority: 3
+    submit_at_min: 60
+    deadline_min: 1300
