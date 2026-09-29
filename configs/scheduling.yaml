@@ -3,13 +3,17 @@
 #   J = travel*travel_min + switching*switch - delay*waited_min
 #       - idle*dest_idle_min - deadline*critical_ratio        (lower J is dispatched first)
 #
-# These weights are a hand-tuned starting point, not an optimum.
+# These weights were found by random search on benchmark workload C
+# (python simulation/tune_cost_weights.py) and adopted because they also beat the
+# previous hand-tuned weights on held-out seeds and on workloads A, B and D.
+# See docs/benchmarking.md. Previous values: travel 1.0, switching 5.0,
+# delay 0.05, idle 0.01, deadline 50.0.
 cost:
   weights:
-    travel: 1.0       # per minute of robot travel
-    switching: 5.0    # per cell-type change at a media/imaging station
-    delay: 0.05       # per minute a task has been waiting
-    idle: 0.01        # per minute the destination has been unassigned
-    deadline: 50.0    # per unit of critical ratio (remaining work / time left)
+    travel: 4.3854      # per minute of robot travel
+    switching: 11.1095  # per cell-type change at a media/imaging station
+    delay: 0.0183       # per minute a task has been waiting
+    idle: 0.003         # per minute the destination has been unassigned
+    deadline: 23.9836   # per unit of critical ratio (remaining work / time left)
   default_step_min: 15.0
   max_critical_ratio: 10.0

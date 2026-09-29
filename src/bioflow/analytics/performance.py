@@ -24,6 +24,7 @@ from bioflow.core.exceptions import ConfigurationError
 from bioflow.core.validation import suggest
 from bioflow.faults.fault import FaultType
 from bioflow.scenario import build_laboratory
+from bioflow.scheduling.config import SchedulingConfig
 from bioflow.scheduling.registry import SCHEDULERS
 from bioflow.workload import FaultPlan, WorkloadSpec, generate_scenario
 
@@ -101,10 +102,11 @@ def _workload(name: str, raw: Mapping[str, Any], defaults: Mapping[str, Any]) ->
 
 
 # ------------------------------------------------------------------ running
-def run_one(spec: WorkloadSpec, scheduler: str, seed: int) -> Row:
+def run_one(spec: WorkloadSpec, scheduler: str, seed: int, scheduling: SchedulingConfig | None = None) -> Row:
+    """Generate the scenario for ``seed`` and run it under ``scheduler`` (optionally with custom settings)."""
     scenario = generate_scenario(spec, seed)
     started = time.perf_counter()
-    lab = build_laboratory(replace(scenario, scheduler=scheduler))
+    lab = build_laboratory(replace(scenario, scheduler=scheduler), scheduling=scheduling)
     summary = lab.run()
     wall = time.perf_counter() - started
     metrics = summary.metrics

@@ -165,17 +165,22 @@ def _parse_experiment(item: Any, number: int) -> ExperimentSpec:
 
 # ---------------------------------------------------------------- running
 def build_laboratory(
-    scenario: Scenario, scheduler: str | None = None, telemetry: TelemetryLevel | None = None
+    scenario: Scenario,
+    scheduler: str | None = None,
+    telemetry: TelemetryLevel | None = None,
+    scheduling: SchedulingConfig | None = None,
 ) -> Laboratory:
     """Create the lab described by ``scenario`` and schedule its experiments.
 
     ``scheduler`` overrides the scenario's choice, for comparing policies on the same workload.
     ``telemetry`` turns on structured event recording at that detail level.
+    ``scheduling`` replaces the scenario's scheduling config (used when tuning weights).
     """
     protocols = load_protocol_library(scenario.protocol_dir)
-    scheduling = (
-        load_scheduling_config(scenario.scheduling_config) if scenario.scheduling_config else SchedulingConfig()
-    )
+    if scheduling is None:
+        scheduling = (
+            load_scheduling_config(scenario.scheduling_config) if scenario.scheduling_config else SchedulingConfig()
+        )
     layout = load_layout(scenario.laboratory_config) if scenario.laboratory_config else None
     travel: TravelTimeModel = (
         MapTravelTime(layout.map, layout.robot_speed_m_per_min) if layout

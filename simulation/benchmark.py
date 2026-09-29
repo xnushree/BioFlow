@@ -81,7 +81,7 @@ def report(plan, runs, summary, workloads, seeds, elapsed: float) -> str:  # noq
               "describe this simulated lab, not any real facility.",
               f"- {len(seeds)} seeds per cell is a small sample; treat differences within one standard deviation "
               "as noise.",
-              "- The cost-based scheduler uses hand-tuned default weights (`configs/scheduling.yaml`).",
+              "- The cost-based scheduler uses weights tuned on workload C (`configs/scheduling.yaml`, see docs/benchmarking.md).",
               "- Deadlines are set relative to each protocol's nominal duration; the miss rate depends on that "
               "choice as much as on the scheduler.", "",
               "## Charts", "", "![Overview](../plots/benchmark_overview.png)", ""]

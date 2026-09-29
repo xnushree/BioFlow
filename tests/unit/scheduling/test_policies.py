@@ -178,7 +178,7 @@ def test_breakdown_total_applies_weights_and_signs() -> None:
 def test_repository_scheduling_config_loads() -> None:
     config = load_scheduling_config(REPO_CONFIG)
 
-    assert config.cost.weights.deadline == 50.0
+    assert config.cost.weights == CostWeights()  # the file and the code defaults agree
 
 
 def test_empty_config_uses_defaults() -> None:

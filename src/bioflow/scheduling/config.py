@@ -12,18 +12,19 @@ import yaml
 from bioflow.core.exceptions import ConfigurationError, ValidationError
 from bioflow.core.validation import is_number, require, suggest
 
-# Hand-tuned starting point, roughly balancing units: one 2-minute trip ~ 2,
-# waiting 100 min ~ 5, a critical ratio of 1 (just on time) ~ 50.
-# Phase 25 tunes these systematically.
+# Defaults found by random search (simulation/tune_cost_weights.py) on benchmark
+# workload C and validated on held-out seeds and on workloads A, B and D; see
+# docs/benchmarking.md. The original hand-tuned values were travel 1.0,
+# switching 5.0, delay 0.05, idle 0.01, deadline 50.0.
 
 
 @dataclass(frozen=True)
 class CostWeights:
-    travel: float = 1.0
-    switching: float = 5.0
-    delay: float = 0.05
-    idle: float = 0.01
-    deadline: float = 50.0
+    travel: float = 4.3854
+    switching: float = 11.1095
+    delay: float = 0.0183
+    idle: float = 0.003
+    deadline: float = 23.9836
 
     def __post_init__(self) -> None:
         for f in fields(self):
