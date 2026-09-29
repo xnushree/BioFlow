@@ -20,6 +20,10 @@ class ConfigurationError(BioFlowError):
     """A laboratory, equipment, or scheduling configuration is missing or invalid."""
 
 
+class ValidationError(BioFlowError):
+    """A domain object was built with values that violate its invariants."""
+
+
 class ProtocolError(BioFlowError):
     """An experiment protocol failed to parse or validate."""
 

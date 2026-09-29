@@ -14,6 +14,7 @@ from bioflow.core.exceptions import (
     SimulationError,
     UnknownEntityError,
     UnrecoverableFaultError,
+    ValidationError,
 )
 
 
@@ -21,6 +22,7 @@ from bioflow.core.exceptions import (
     "error",
     [
         ConfigurationError("bad config"),
+        ValidationError("negative duration"),
         ProtocolError("bad protocol"),
         SimulationError("event in the past"),
         UnknownEntityError("ROBOT_99", "robot"),
