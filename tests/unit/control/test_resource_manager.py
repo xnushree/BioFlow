@@ -18,6 +18,8 @@ from bioflow.domain import EquipmentKind, Operation, PlateState
 from bioflow.equipment import Incubator, ProcessingStation, Robot, Storage, TransportJob
 from bioflow.equipment.config import ContainerSpec, IncubatorSpec, RobotSpec, StationSpec
 from bioflow.equipment.station import StationState
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 
 @pytest.fixture
@@ -27,7 +29,8 @@ def lab(engine: SimulationEngine) -> dict[str, Any]:
         "INCUBATOR_01": Incubator("INCUBATOR_01", engine, IncubatorSpec(capacity=2)),
         "INCUBATOR_02": Incubator("INCUBATOR_02", engine, IncubatorSpec(capacity=2)),
         "IMAGING_01": ProcessingStation("IMAGING_01", engine, Operation.IMAGE, StationSpec(10)),
-        "ROBOT_01": Robot("ROBOT_01", engine, RobotSpec(0.5, 0.5), "STORAGE_01"),
+        "ROBOT_01": Robot("ROBOT_01", engine, RobotSpec(0.5, 0.5), "STORAGE_01",
+                          motion=TimedMotion(engine, ConstantTravelTime(1.0))),
     }
 
 
@@ -138,7 +141,7 @@ def test_arrival_fulfils_reservation_without_changing_free_capacity(
     manager.reserve("INCUBATOR_01", "P1")
     free_before = manager.status("INCUBATOR_01").free
 
-    lab["ROBOT_01"].start_transport(TransportJob("P1", lab["STORAGE_01"], lab["INCUBATOR_01"], 1.0, 1.0))
+    lab["ROBOT_01"].start_transport(TransportJob("P1", lab["STORAGE_01"], lab["INCUBATOR_01"]))
     engine.run()
 
     status = manager.status("INCUBATOR_01")
@@ -187,7 +190,7 @@ def test_robot_availability_follows_transport(
 ) -> None:
     lab["STORAGE_01"].receive(make_plate("P1"))
     manager.reserve("INCUBATOR_01", "P1")
-    lab["ROBOT_01"].start_transport(TransportJob("P1", lab["STORAGE_01"], lab["INCUBATOR_01"], 1.0, 1.0))
+    lab["ROBOT_01"].start_transport(TransportJob("P1", lab["STORAGE_01"], lab["INCUBATOR_01"]))
 
     assert manager.available_robots() == []
     engine.run()

@@ -1,0 +1,27 @@
+# Multi-robot congestion: four robots share the floor while short-cycle plates
+# keep them constantly moving between incubators and stations. Exercises cell
+# reservations, waiting, rerouting and deadlock resolution.
+scenario: robot_congestion
+description: 4 robots, 30 stress-test plates and 10 standard plates on the full lab layout.
+seed: 7
+scheduler: fifo
+scheduling_config: configs/scheduling.yaml
+equipment_config: configs/equipment.yaml
+equipment_overrides:
+  robots: {count: 4}
+  incubators: {count: 4}
+  media_stations: {count: 2}
+  imaging_stations: {count: 2}
+laboratory_config: configs/laboratory.yaml
+protocol_dir: protocols
+
+experiments:
+  - id: STRESS
+    protocol: stress_test
+    plates: 30
+    priority: 2
+  - id: STANDARD
+    protocol: basic_experiment
+    plates: 10
+    priority: 1
+    submit_at_min: 30

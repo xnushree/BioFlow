@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from bioflow.control.state_manager import StateManager
 from bioflow.core.clock import format_sim_time
 from bioflow.domain import ExperimentStatus, TaskStatus
+from bioflow.robotics.motion import MotionStats
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class RunSummary:
     events_processed: int
     experiments: tuple[ExperimentResult, ...]
     stalled_tasks: tuple[str, ...]  # unfinished tasks when the simulation ran out of events
+    motion: MotionStats | None = None  # robot coordination statistics (map-based runs only)
 
     @property
     def stalled(self) -> bool:
@@ -56,6 +58,9 @@ class RunSummary:
             f"Tasks completed:    {self.tasks_completed}/{self.tasks_total}",
             f"Deadline misses:    {self.deadline_violations}",
             f"Events processed:   {self.events_processed}",
+            *([f"Robot movement:     {self.motion.steps} steps, {self.motion.waits} waits, "
+               f"{self.motion.reroutes} reroutes, {self.motion.deadlocks} deadlocks resolved"]
+              if self.motion else []),
             "",
             f"{'Experiment':<12}{'Protocol':<20}{'Plates':>7}{'Prio':>6}  {'Status':<10}{'Finished':>10}"
             f"{'Deadline':>10}  Late",
@@ -75,7 +80,12 @@ class RunSummary:
 
 
 def summarize(
-    state: StateManager, scheduler: str, end_time: float, events_processed: int, queue_empty: bool
+    state: StateManager,
+    scheduler: str,
+    end_time: float,
+    events_processed: int,
+    queue_empty: bool,
+    motion: MotionStats | None = None,
 ) -> RunSummary:
     tasks = list(state.tasks)
     completion_times = [t.completed_at for t in tasks if t.completed_at is not None]
@@ -102,4 +112,5 @@ def summarize(
         events_processed=events_processed,
         experiments=tuple(results),
         stalled_tasks=unfinished if queue_empty else (),
+        motion=motion,
     )

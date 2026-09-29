@@ -8,9 +8,12 @@ from bioflow.core.simulation import SimulationEngine
 from bioflow.domain import Operation, PlateState
 from bioflow.equipment import EquipmentEvent, ProcessingStation, Robot, RobotState, Storage, TransportJob
 from bioflow.equipment.config import ContainerSpec, RobotSpec, StationSpec
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 PICK_MIN = 0.5
 PLACE_MIN = 1.0
+TRAVEL_MIN = 3.0
 
 
 @pytest.fixture
@@ -25,11 +28,12 @@ def imager(engine: SimulationEngine) -> ProcessingStation:
 
 @pytest.fixture
 def robot(engine: SimulationEngine) -> Robot:
-    return Robot("ROBOT_01", engine, RobotSpec(PICK_MIN, PLACE_MIN), home_location_id="STORAGE_01")
+    motion = TimedMotion(engine, ConstantTravelTime(TRAVEL_MIN))
+    return Robot("ROBOT_01", engine, RobotSpec(PICK_MIN, PLACE_MIN), home_location_id="STORAGE_01", motion=motion)
 
 
-def job(plate_id: str, source, destination, to_source: float = 2.0, to_dest: float = 3.0) -> TransportJob:
-    return TransportJob(plate_id, source, destination, to_source, to_dest)
+def job(plate_id: str, source, destination) -> TransportJob:
+    return TransportJob(plate_id, source, destination)
 
 
 def test_transport_moves_plate_with_correct_timing(
@@ -39,11 +43,11 @@ def test_transport_moves_plate_with_correct_timing(
     plate = make_plate("P1")
     storage.receive(plate)
 
-    robot.start_transport(job("P1", storage, imager, to_source=2.0, to_dest=3.0))
+    robot.start_transport(job("P1", storage, imager))
     engine.run()
 
-    # 2.0 travel + 0.5 pick + 3.0 travel + 1.0 place
-    assert engine.now == pytest.approx(6.5)
+    # already at the source (0 travel) + 0.5 pick + 3.0 travel + 1.0 place
+    assert engine.now == pytest.approx(4.5)
     assert imager.holds("P1") and not storage.holds("P1")
     assert plate.location_id == "IMAGING_01"
     assert plate.state is PlateState.WAITING
@@ -54,9 +58,9 @@ def test_transport_moves_plate_with_correct_timing(
                   if e.source == "ROBOT_01" and e.event_type != EquipmentEvent.STATE_CHANGED]
     assert milestones == [
         (0.0, EquipmentEvent.TRANSPORT_STARTED),
-        (2.5, EquipmentEvent.PLATE_PICKED),
-        (6.5, EquipmentEvent.PLATE_PLACED),
-        (6.5, EquipmentEvent.TRANSPORT_COMPLETED),
+        (0.5, EquipmentEvent.PLATE_PICKED),
+        (4.5, EquipmentEvent.PLATE_PLACED),
+        (4.5, EquipmentEvent.TRANSPORT_COMPLETED),
     ]
 
 
@@ -79,9 +83,9 @@ def test_plate_is_in_transit_while_carried(
 ) -> None:
     plate = make_plate("P1")
     storage.receive(plate)
-    robot.start_transport(job("P1", storage, imager, to_source=2.0, to_dest=3.0))
+    robot.start_transport(job("P1", storage, imager))
 
-    engine.run(until=4.0)  # after pick (2.5), before arrival (5.5)
+    engine.run(until=2.0)  # after pick (0.5), before arrival (3.5)
 
     assert robot.state is RobotState.TRANSPORTING
     assert robot.carrying is plate
@@ -110,14 +114,6 @@ def test_placing_into_full_destination_fails_loudly(
 
     with pytest.raises(CapacityExceededError):
         engine.run()
-
-
-@pytest.mark.parametrize(("to_source", "to_dest"), [(-1.0, 1.0), (1.0, float("inf"))])
-def test_job_rejects_invalid_travel_times(
-    storage: Storage, imager: ProcessingStation, to_source: float, to_dest: float
-) -> None:
-    with pytest.raises(ValidationError):
-        job("P1", storage, imager, to_source, to_dest)
 
 
 def test_job_rejects_same_source_and_destination(storage: Storage) -> None:

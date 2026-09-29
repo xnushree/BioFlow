@@ -1,18 +1,17 @@
 """Transport robots: move a plate from one piece of equipment to another.
 
-A transport is a chain of timed phases, each ending in a scheduled event:
+A transport is a chain of phases:
 
     IDLE -> ASSIGNED -> MOVING -> PICKING -> TRANSPORTING -> PLACING -> IDLE
                         (travel)   (pick)    (travel)        (place)
 
-Travel times are supplied with the job. Until the laboratory map and path
-planner exist (Phases 12-13) the caller provides them; afterwards the planner
-will, and this class does not need to change.
+Travel legs are delegated to a MotionController ("take me to X, call me back"),
+so the same Robot works with simple timed trips or with cell-by-cell
+movement, reservations and deadlock handling on the laboratory map.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -26,16 +25,15 @@ from bioflow.domain import EquipmentKind, Plate, PlateState
 from bioflow.equipment.base import Equipment, PlateHolder
 from bioflow.equipment.config import RobotSpec
 from bioflow.equipment.events import EquipmentEvent
+from bioflow.robotics.motion import MotionController
 
-_ARRIVED_AT_SOURCE = "ROBOT_ARRIVED_AT_SOURCE"
 _PICK_DONE = "ROBOT_PICK_DONE"
-_ARRIVED_AT_DESTINATION = "ROBOT_ARRIVED_AT_DESTINATION"
 _PLACE_DONE = "ROBOT_PLACE_DONE"
 
 
 class RobotState(StrEnum):
     IDLE = "IDLE"
-    ASSIGNED = "ASSIGNED"  # has a job; from Phase 14 it may wait here for a path reservation
+    ASSIGNED = "ASSIGNED"  # has accepted a job and is about to set off
     MOVING = "MOVING"  # travelling empty to the pickup location
     PICKING = "PICKING"
     TRANSPORTING = "TRANSPORTING"  # travelling with the plate
@@ -69,13 +67,8 @@ class TransportJob:
     plate_id: str
     source: PlateHolder
     destination: PlateHolder
-    travel_to_source_min: float
-    travel_to_destination_min: float
 
     def __post_init__(self) -> None:
-        for name in ("travel_to_source_min", "travel_to_destination_min"):
-            value = getattr(self, name)
-            require(math.isfinite(value) and value >= 0, f"{name} must be finite and >= 0, got {value}")
         require(
             self.source.equipment_id != self.destination.equipment_id,
             f"{self.plate_id}: source and destination are both {self.source.equipment_id}",
@@ -89,13 +82,20 @@ class Robot(Equipment[RobotState]):
     non_operational_states = frozenset({RobotState.SAFE_STOP, RobotState.FAULT, RobotState.RECOVERY})
 
     def __init__(
-        self, equipment_id: str, context: SimulationContext, spec: RobotSpec, home_location_id: str
+        self,
+        equipment_id: str,
+        context: SimulationContext,
+        spec: RobotSpec,
+        home_location_id: str,
+        motion: MotionController,
     ) -> None:
         super().__init__(equipment_id, EquipmentKind.ROBOT, context, RobotState.IDLE)
         self.spec = spec
-        self.location_id = home_location_id
+        self.location_id = home_location_id  # equipment the robot last docked at
+        self._motion = motion
         self._job: TransportJob | None = None
         self._carrying: Plate | None = None
+        motion.register(equipment_id)
 
     @property
     def is_idle(self) -> bool:
@@ -118,10 +118,10 @@ class Robot(Equipment[RobotState]):
         self._set_state(RobotState.ASSIGNED)
         self._publish(EquipmentEvent.TRANSPORT_STARTED, **self._job_payload(job))
         self._set_state(RobotState.MOVING)
-        self._schedule(job.travel_to_source_min, _ARRIVED_AT_SOURCE, self._arrive_at_source)
+        self._motion.travel(self.equipment_id, self.location_id, job.source.equipment_id, self._arrive_at_source)
 
-    # Each handler below finishes one phase and schedules the next.
-    def _arrive_at_source(self, event: Event) -> None:
+    # Each handler below finishes one phase and starts the next.
+    def _arrive_at_source(self) -> None:
         job = self._current_job()
         self.location_id = job.source.equipment_id
         self._set_state(RobotState.PICKING)
@@ -135,9 +135,11 @@ class Robot(Equipment[RobotState]):
         self._carrying = plate
         self._publish(EquipmentEvent.PLATE_PICKED, plate_id=plate.plate_id, source=job.source.equipment_id)
         self._set_state(RobotState.TRANSPORTING)
-        self._schedule(job.travel_to_destination_min, _ARRIVED_AT_DESTINATION, self._arrive_at_destination)
+        self._motion.travel(
+            self.equipment_id, job.source.equipment_id, job.destination.equipment_id, self._arrive_at_destination
+        )
 
-    def _arrive_at_destination(self, event: Event) -> None:
+    def _arrive_at_destination(self) -> None:
         self.location_id = self._current_job().destination.equipment_id
         self._set_state(RobotState.PLACING)
         self._schedule(self.spec.place_time_min, _PLACE_DONE, self._finish_place)
@@ -153,6 +155,8 @@ class Robot(Equipment[RobotState]):
         # Become IDLE *before* announcing completion so a listener can assign the next job immediately.
         self._set_state(RobotState.IDLE)
         self._publish(EquipmentEvent.TRANSPORT_COMPLETED, **self._job_payload(job))
+        if self.is_idle:  # a listener may already have assigned the next job
+            self._motion.robot_idle(self.equipment_id)
 
     def _current_job(self) -> TransportJob:
         assert self._job is not None, f"{self.equipment_id}: phase event fired without a job"

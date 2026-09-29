@@ -16,6 +16,8 @@ from bioflow.domain import PlateState
 from bioflow.equipment import EquipmentEvent, Incubator, ProcessingStation, Robot, Storage, TransportJob
 from bioflow.equipment.config import load_equipment_config
 from bioflow.equipment.factory import build_equipment
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 CONFIG = Path(__file__).parents[2] / "configs" / "equipment.yaml"
 TRAVEL_MIN = 2.0
@@ -45,8 +47,7 @@ class ScriptedController:
 
     def move_to(self, destination: str) -> None:
         self.robot.start_transport(TransportJob(
-            self.plate_id, self.equipment[self.location], self.equipment[destination],
-            TRAVEL_MIN, TRAVEL_MIN,
+            self.plate_id, self.equipment[self.location], self.equipment[destination]
         ))
         self.location = destination
 
@@ -67,7 +68,7 @@ class ScriptedController:
 
 def test_plate_completes_full_protocol_route(engine: SimulationEngine, make_plate, event_log: list[Event]) -> None:
     config = load_equipment_config(CONFIG)
-    equipment = build_equipment(config, engine)
+    equipment = build_equipment(config, engine, TimedMotion(engine, ConstantTravelTime(TRAVEL_MIN)))
     plate = make_plate("EXP001-P001")
     equipment["STORAGE_01"].receive(plate)
 
@@ -75,7 +76,8 @@ def test_plate_completes_full_protocol_route(engine: SimulationEngine, make_plat
     engine.run()
 
     robot_spec = config.robots.spec
-    per_transport = 2 * TRAVEL_MIN + robot_spec.pick_time_min + robot_spec.place_time_min
+    # The robot is always already at the pickup point, so only the loaded leg takes travel time.
+    per_transport = TRAVEL_MIN + robot_spec.pick_time_min + robot_spec.place_time_min
     processing = (720 + config.media_stations.spec.process_time_min
                   + 1440 + config.imaging_stations.spec.process_time_min)
     assert engine.now == pytest.approx(5 * per_transport + processing)

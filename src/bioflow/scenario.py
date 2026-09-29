@@ -21,7 +21,7 @@ import yaml
 from bioflow.analytics.summary import RunSummary
 from bioflow.core.exceptions import BioFlowError, ConfigurationError
 from bioflow.core.validation import is_int, is_number, suggest
-from bioflow.domain import EquipmentKind, Experiment
+from bioflow.domain import Experiment
 from bioflow.equipment.config import load_equipment_config
 from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
@@ -31,7 +31,10 @@ from bioflow.scheduling.config import SchedulingConfig, load_scheduling_config
 from bioflow.scheduling.registry import create_scheduler
 
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
-_TOP_OPTIONAL = ("description", "seed", "scheduler", "scheduling_config", "travel_time_min", "laboratory_config")
+_TOP_OPTIONAL = (
+    "description", "seed", "scheduler", "scheduling_config", "travel_time_min", "laboratory_config",
+    "equipment_overrides",
+)
 _EXPERIMENT_REQUIRED = ("id", "protocol", "plates")
 _EXPERIMENT_OPTIONAL = ("priority", "submit_at_min", "deadline_min")
 DEFAULT_SCHEDULER = "fifo"
@@ -60,6 +63,7 @@ class Scenario:
     experiments: tuple[ExperimentSpec, ...]
     scheduling_config: Path | None = None
     laboratory_config: Path | None = None
+    equipment_overrides: Mapping[str, Any] | None = None
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -102,6 +106,8 @@ def parse_scenario(data: Any) -> Scenario:
         experiments=experiments,
         scheduling_config=Path(_text(raw, "scheduling_config")) if "scheduling_config" in raw else None,
         laboratory_config=Path(_text(raw, "laboratory_config")) if "laboratory_config" in raw else None,
+        equipment_overrides=_mapping(raw["equipment_overrides"], "equipment_overrides")
+        if "equipment_overrides" in raw else None,
     )
 
 
@@ -132,16 +138,18 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
     scheduling = (
         load_scheduling_config(scenario.scheduling_config) if scenario.scheduling_config else SchedulingConfig()
     )
-    lab = Laboratory(
-        equipment_config=load_equipment_config(scenario.equipment_config),
-        scheduler=create_scheduler(scheduler or scenario.scheduler, scheduling),
-        travel=_travel_model(scenario),
-        seed=scenario.seed,
+    layout = load_layout(scenario.laboratory_config) if scenario.laboratory_config else None
+    travel: TravelTimeModel = (
+        MapTravelTime(layout.map, layout.robot_speed_m_per_min) if layout
+        else ConstantTravelTime(scenario.travel_time_min)
     )
-    if isinstance(lab.dispatcher.travel, MapTravelTime):
-        lab.dispatcher.travel.map.check_covers(
-            eid for eid, eq in lab.state.equipment.items() if eq.kind is not EquipmentKind.ROBOT
-        )
+    lab = Laboratory(
+        equipment_config=load_equipment_config(scenario.equipment_config, scenario.equipment_overrides),
+        scheduler=create_scheduler(scheduler or scenario.scheduler, scheduling),
+        travel=travel,
+        seed=scenario.seed,
+        layout=layout,
+    )
     for spec in scenario.experiments:
         if spec.protocol not in protocols:
             raise ConfigurationError(
@@ -160,13 +168,6 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
             raise ConfigurationError(f"{spec.experiment_id}: {error}") from error
         lab.schedule_experiment(experiment)
     return lab
-
-
-def _travel_model(scenario: Scenario) -> TravelTimeModel:
-    if scenario.laboratory_config is None:
-        return ConstantTravelTime(scenario.travel_time_min)
-    layout = load_layout(scenario.laboratory_config)
-    return MapTravelTime(layout.map, layout.robot_speed_m_per_min)
 
 
 def run_scenario(scenario: Scenario, scheduler: str | None = None, until: float | None = None) -> RunSummary:

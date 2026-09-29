@@ -16,9 +16,9 @@ import yaml
 
 from bioflow.core.exceptions import ConfigurationError
 from bioflow.core.validation import is_int, is_number, suggest
-from bioflow.robotics.map import EquipmentPlacement, LabMap, Rect, Zone
+from bioflow.robotics.map import Cell, EquipmentPlacement, LabMap, Rect, Zone
 
-_TOP_KEYS = ("grid", "movement", "equipment", "blocked", "zones")
+_TOP_KEYS = ("grid", "movement", "equipment", "blocked", "zones", "parking")
 _RECT_KEYS = ("x", "y", "width", "height")
 
 
@@ -57,6 +57,7 @@ def parse_layout(data: Any) -> LabLayout:
     placements = [_placement(eid, spec) for eid, spec in equipment.items()]
     blocked = [_rect(item, f"blocked[{i}]") for i, item in enumerate(_list(raw.get("blocked"), "blocked"))]
     zones = [_zone(item, f"zones[{i}]") for i, item in enumerate(_list(raw.get("zones"), "zones"))]
+    parking = [_cell(item, f"parking[{i}]") for i, item in enumerate(_list(raw.get("parking"), "parking"))]
 
     lab_map = LabMap(
         width=_integer(grid, "width", "grid"),
@@ -65,6 +66,7 @@ def parse_layout(data: Any) -> LabLayout:
         placements=placements,
         blocked=blocked,
         zones=zones,
+        parking=parking,
     )
     return LabLayout(map=lab_map, robot_speed_m_per_min=speed)
 
@@ -73,10 +75,15 @@ def _placement(equipment_id: str, spec: Any) -> EquipmentPlacement:
     where = f"equipment.{equipment_id}"
     raw = _mapping(spec, where)
     _keys(raw, _RECT_KEYS + ("access",), _RECT_KEYS + ("access",), where)
-    access = raw["access"]
-    if not (isinstance(access, list) and len(access) == 2 and all(is_int(v) for v in access)):
-        raise ConfigurationError(f"{where}.access: expected [x, y], got {access!r}")
-    return EquipmentPlacement(equipment_id, _rect(raw, where, extra=("access",)), (access[0], access[1]))
+    return EquipmentPlacement(
+        equipment_id, _rect(raw, where, extra=("access",)), _cell(raw["access"], f"{where}.access")
+    )
+
+
+def _cell(value: Any, where: str) -> Cell:
+    if not (isinstance(value, list) and len(value) == 2 and all(is_int(v) for v in value)):
+        raise ConfigurationError(f"{where}: expected [x, y], got {value!r}")
+    return (value[0], value[1])
 
 
 def _zone(item: Any, where: str) -> Zone:

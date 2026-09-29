@@ -11,6 +11,8 @@ from bioflow.equipment.incubator import INCUBATOR_TRANSITIONS
 from bioflow.equipment.robot import ROBOT_TRANSITIONS
 from bioflow.equipment.station import STATION_TRANSITIONS
 from bioflow.equipment.storage import STORAGE_TRANSITIONS
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 
 def to_fault(states: list[str], fault: str = "FAULT") -> set[tuple[str, str]]:
@@ -68,7 +70,8 @@ def test_fault_recovery_never_skips_recovery() -> None:
 def test_equipment_rejects_illegal_state_change_without_publishing(
     engine: SimulationEngine, event_log: list[Event]
 ) -> None:
-    robot = Robot("ROBOT_01", engine, RobotSpec(0.5, 0.5), home_location_id="STORAGE_01")
+    robot = Robot("ROBOT_01", engine, RobotSpec(0.5, 0.5), home_location_id="STORAGE_01",
+                  motion=TimedMotion(engine, ConstantTravelTime(1.0)))
 
     with pytest.raises(InvalidTransitionError, match="ROBOT_01: invalid transition IDLE -> PLACING"):
         robot._set_state(RobotState.PLACING)

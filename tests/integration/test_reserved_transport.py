@@ -14,6 +14,8 @@ from bioflow.core.simulation import SimulationEngine
 from bioflow.domain import EquipmentKind, Operation, PlateState
 from bioflow.equipment import EquipmentEvent, ProcessingStation, Robot, Storage, TransportJob
 from bioflow.equipment.config import ContainerSpec, RobotSpec, StationSpec
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 TRAVEL_MIN = 2.0
 
@@ -23,7 +25,8 @@ def test_second_plate_waits_for_station_instead_of_colliding(
 ) -> None:
     storage = Storage("STORAGE_01", engine, ContainerSpec(10))
     imager = ProcessingStation("IMAGING_01", engine, Operation.IMAGE, StationSpec(10))
-    robots = [Robot(f"ROBOT_0{i}", engine, RobotSpec(0.5, 0.5), "STORAGE_01") for i in (1, 2)]
+    motion = TimedMotion(engine, ConstantTravelTime(TRAVEL_MIN))
+    robots = [Robot(f"ROBOT_0{i}", engine, RobotSpec(0.5, 0.5), "STORAGE_01", motion) for i in (1, 2)]
     lab = {eq.equipment_id: eq for eq in (storage, imager, *robots)}
     manager = ResourceManager(lab, engine, engine.bus)
     for plate_id in ("P1", "P2"):
@@ -42,7 +45,7 @@ def test_second_plate_waits_for_station_instead_of_colliding(
         plate_id = waiting.pop(0)
         manager.reserve(stations[0], plate_id)
         lab[idle_robots[0]].start_transport(
-            TransportJob(plate_id, storage, lab[stations[0]], TRAVEL_MIN, TRAVEL_MIN)
+            TransportJob(plate_id, storage, lab[stations[0]])
         )
 
     def on_placed(event: Event) -> None:
@@ -52,7 +55,7 @@ def test_second_plate_waits_for_station_instead_of_colliding(
     def on_imaged(event: Event) -> None:  # send the imaged plate back to storage
         idle = manager.available_robots()[0]
         manager.reserve("STORAGE_01", event.payload["plate_id"])
-        lab[idle].start_transport(TransportJob(event.payload["plate_id"], imager, storage, TRAVEL_MIN, TRAVEL_MIN))
+        lab[idle].start_transport(TransportJob(event.payload["plate_id"], imager, storage))
 
     engine.bus.subscribe(EquipmentEvent.PLATE_PLACED, on_placed)
     engine.bus.subscribe(EquipmentEvent.PROCESSING_COMPLETED, on_imaged)

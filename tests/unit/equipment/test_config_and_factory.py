@@ -12,6 +12,8 @@ from bioflow.domain import EquipmentKind
 from bioflow.equipment import Incubator, Robot
 from bioflow.equipment.config import load_equipment_config, parse_equipment_config
 from bioflow.equipment.factory import build_equipment
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 REPO_CONFIG = Path(__file__).parents[3] / "configs" / "equipment.yaml"
 
@@ -89,7 +91,7 @@ def test_error_message_names_the_file(tmp_path: Path) -> None:
 
 
 def test_factory_builds_all_equipment_with_standard_ids(engine: SimulationEngine) -> None:
-    equipment = build_equipment(parse_equipment_config(VALID), engine)
+    equipment = build_equipment(parse_equipment_config(VALID), engine, TimedMotion(engine, ConstantTravelTime(1)))
 
     assert list(equipment) == [
         "STORAGE_01", "INCUBATOR_01", "INCUBATOR_02", "MEDIA_01", "IMAGING_01", "ROBOT_01", "ROBOT_02",

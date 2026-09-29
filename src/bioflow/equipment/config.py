@@ -107,18 +107,36 @@ _SECTIONS: dict[str, tuple[type, int]] = {
 }
 
 
-def load_equipment_config(path: Path) -> EquipmentConfig:
-    """Read and validate an equipment YAML file."""
+def load_equipment_config(path: Path, overrides: Mapping[str, Any] | None = None) -> EquipmentConfig:
+    """Read and validate an equipment YAML file.
+
+    ``overrides`` replaces individual settings per section, e.g.
+    ``{"robots": {"count": 4}}``, so a scenario can vary one parameter of a shared config.
+    """
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ConfigurationError(f"Equipment config not found: {path}") from None
     except yaml.YAMLError as error:
         raise ConfigurationError(f"{path}: invalid YAML: {error}") from error
+    if overrides:
+        data = _apply_overrides(data, overrides)
     try:
         return parse_equipment_config(data)
     except ConfigurationError as error:
         raise ConfigurationError(f"{path}: {error}") from error
+
+
+def _apply_overrides(data: Any, overrides: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(data, Mapping):
+        return dict(overrides)
+    merged = {key: dict(value) if isinstance(value, Mapping) else value for key, value in data.items()}
+    for section, settings in overrides.items():
+        if not isinstance(settings, Mapping):
+            raise ConfigurationError(f"overrides.{section}: expected a mapping of settings")
+        base = merged.get(section)
+        merged[section] = {**(base if isinstance(base, Mapping) else {}), **settings}
+    return merged
 
 
 def parse_equipment_config(data: Any) -> EquipmentConfig:

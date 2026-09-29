@@ -172,8 +172,6 @@ class Dispatcher:
             plate_id=plate.plate_id,
             source=current,  # type: ignore[arg-type]
             destination=self._state.equipment_item(destination),  # type: ignore[arg-type]
-            travel_to_source_min=self._travel.travel_time(robot.location_id, current.equipment_id),
-            travel_to_destination_min=self._travel.travel_time(current.equipment_id, destination),
         ))
         self._publish(DispatchEvent.TASK_DISPATCHED, task_id=task.task_id, plate_id=plate.plate_id,
                       operation=task.operation, destination=destination, robot=robot.equipment_id)

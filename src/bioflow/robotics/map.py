@@ -74,6 +74,7 @@ class LabMap:
         placements: Iterable[EquipmentPlacement],
         blocked: Iterable[Rect] = (),
         zones: Iterable[Zone] = (),
+        parking: Iterable[Cell] = (),
     ) -> None:
         self.width = width
         self.height = height
@@ -81,6 +82,7 @@ class LabMap:
         self._placements = {p.equipment_id: p for p in placements}
         self._blocked_areas = tuple(blocked)
         self._zones = tuple(zones)
+        self.parking: tuple[Cell, ...] = tuple(parking)  # where idle robots wait, one robot per cell
 
         problems = self._check_shapes()
         # Derived lookups are only built from in-bounds geometry.
@@ -94,7 +96,7 @@ class LabMap:
             for cell in zone.area.cells():
                 self._step_cost[cell] = max(self._step_cost.get(cell, MIN_STEP_COST), zone.cost_multiplier)
         if not problems:
-            problems = self._check_access_points() or self._check_connectivity()
+            problems = self._check_access_points() or self._check_parking() or self._check_connectivity()
         if problems:
             raise ConfigurationError("Invalid laboratory layout:\n" + "\n".join(f"  - {p}" for p in problems))
 
@@ -190,15 +192,31 @@ class LabMap:
             users[p.access] = p.equipment_id
         return problems
 
+    def _check_parking(self) -> list[str]:
+        problems = []
+        access_points = {p.access for p in self._placements.values()}
+        if len(set(self.parking)) != len(self.parking):
+            problems.append("parking cells must be distinct")
+        for cell in self.parking:
+            if not self.is_passable(cell):
+                problems.append(f"parking cell {cell} is blocked or outside the grid")
+            elif cell in access_points:
+                problems.append(f"parking cell {cell} is an access point; idle robots would block it")
+        return problems
+
     def _check_connectivity(self) -> list[str]:
         if not self._placements:
             return []
         first = next(iter(self._placements.values()))
         reachable = self.reachable_from(first.access)
+        problems = []
         cut_off = sorted(p.equipment_id for p in self._placements.values() if p.access not in reachable)
         if cut_off:
-            return [f"robots cannot travel between {first.equipment_id} and {cut_off}"]
-        return []
+            problems.append(f"robots cannot travel between {first.equipment_id} and {cut_off}")
+        stranded = [cell for cell in self.parking if cell not in reachable]
+        if stranded:
+            problems.append(f"parking cells {stranded} cannot be reached from the equipment")
+        return problems
 
     # ---------------------------------------------------------------- display
     def render(self, marks: Mapping[Cell, str] | None = None) -> str:
@@ -214,13 +232,16 @@ class LabMap:
             for x, y in p.footprint.cells():
                 grid[y][x] = _symbol(p.equipment_id)
             grid[p.access[1]][p.access[0]] = "+"
+        for x, y in self.parking:
+            grid[y][x] = "P"
         for (x, y), char in (marks or {}).items():
             grid[y][x] = char
         return "\n".join("".join(row) for row in grid)
 
 
 _SYMBOLS = {"STORAGE": "S", "INCUBATOR": "I", "MEDIA": "M", "IMAGING": "V", "WASTE": "W"}
-LEGEND = "S storage  I incubator  M media  V imaging  W waste  + access point  # blocked  ~ slow zone  . floor"
+LEGEND = ("S storage  I incubator  M media  V imaging  W waste  + access point  P parking  "
+          "# blocked  ~ slow zone  . floor")
 
 
 def _symbol(equipment_id: str) -> str:

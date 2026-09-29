@@ -14,6 +14,7 @@ from bioflow.equipment.robot import Robot
 from bioflow.equipment.station import ProcessingStation
 from bioflow.equipment.storage import Storage
 from bioflow.equipment.waste_station import WasteStation
+from bioflow.robotics.motion import MotionController
 
 SpecT = TypeVar("SpecT")
 
@@ -23,7 +24,9 @@ def equipment_id(prefix: str, number: int) -> str:
     return f"{prefix}_{number:02d}"
 
 
-def build_equipment(config: EquipmentConfig, context: SimulationContext) -> dict[str, Equipment[Any]]:
+def build_equipment(
+    config: EquipmentConfig, context: SimulationContext, motion: MotionController
+) -> dict[str, Equipment[Any]]:
     """Instantiate all equipment, keyed by ID. Robots start at the first storage area."""
     home = equipment_id("STORAGE", 1)
     equipment: dict[str, Equipment[Any]] = {}
@@ -40,5 +43,5 @@ def build_equipment(config: EquipmentConfig, context: SimulationContext) -> dict
     add("IMAGING", config.imaging_stations,
         lambda i, s: ProcessingStation(i, context, Operation.IMAGE, s))
     add("WASTE", config.waste_stations, lambda i, s: WasteStation(i, context, s))
-    add("ROBOT", config.robots, lambda i, s: Robot(i, context, s, home_location_id=home))
+    add("ROBOT", config.robots, lambda i, s: Robot(i, context, s, home_location_id=home, motion=motion))
     return equipment

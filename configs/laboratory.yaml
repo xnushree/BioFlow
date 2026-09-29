@@ -41,6 +41,16 @@ blocked:
   - {x: 10, y: 8,  width: 10, height: 3}   # central lab bench
   - {x: 6,  y: 14, width: 2,  height: 2}   # structural pillar
 
+# Where idle robots wait, out of the main traffic lanes. One robot per cell,
+# so this list must be at least as long as the number of robots.
+parking:
+  - [1, 16]
+  - [2, 16]
+  - [3, 16]
+  - [4, 16]
+  - [1, 18]
+  - [2, 18]
+
 zones:
   # Robots slow down in front of incubator doors, so crossing this strip costs more.
   - {name: incubator_clearance, x: 0, y: 2, width: 25, height: 2, cost: 1.5}

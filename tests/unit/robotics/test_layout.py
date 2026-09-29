@@ -13,6 +13,8 @@ from bioflow.equipment.config import load_equipment_config
 from bioflow.equipment.factory import build_equipment
 from bioflow.robotics.__main__ import main
 from bioflow.robotics.layout import load_layout, parse_layout
+from bioflow.robotics.motion import TimedMotion
+from bioflow.robotics.travel import ConstantTravelTime
 
 ROOT = Path(__file__).parents[3]
 LAYOUT = ROOT / "configs" / "laboratory.yaml"
@@ -33,7 +35,9 @@ def test_repository_layout_loads() -> None:
 
 
 def test_repository_layout_places_all_configured_equipment() -> None:
-    equipment = build_equipment(load_equipment_config(ROOT / "configs" / "equipment.yaml"), SimulationEngine())
+    engine = SimulationEngine()
+    config = load_equipment_config(ROOT / "configs" / "equipment.yaml")
+    equipment = build_equipment(config, engine, TimedMotion(engine, ConstantTravelTime(1)))
     non_robots = [eid for eid in equipment if not eid.startswith("ROBOT")]
 
     load_layout(LAYOUT).map.check_covers(non_robots)
