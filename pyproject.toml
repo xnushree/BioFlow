@@ -1,9 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bioflow-x"
-version = "0.0.1"
+version = "0.1.0"
 description = "Fault-tolerant digital twin and orchestration platform for a simulated cell-culture laboratory"
 requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --import-mode=importlib"
