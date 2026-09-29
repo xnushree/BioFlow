@@ -61,6 +61,7 @@ class Protocol:
         self._check_terminal_steps(self.steps)
 
     def _check_terminal_steps(self, steps: Sequence[ProtocolStep]) -> None:
+        """Exactly the last step must end the workflow, so every plate has a final destination."""
         for index, step in enumerate(steps[:-1]):
             require(
                 not step.operation.is_terminal,
@@ -68,3 +69,9 @@ class Protocol:
                 "and must be the last step",
                 ProtocolError,
             )
+        require(
+            steps[-1].operation.is_terminal,
+            f"{self.name}: last step is {steps[-1].operation}; a protocol must end with "
+            f"{' or '.join(op for op in Operation if op.is_terminal)} so the plate has a final destination",
+            ProtocolError,
+        )

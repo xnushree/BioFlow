@@ -1,0 +1,19 @@
+# Standard culture cycle: grow, refresh media, grow, image, archive.
+# Durations are in simulated minutes. Steps without duration_min use the
+# station's configured processing time (configs/equipment.yaml).
+protocol: basic_experiment
+cell_type: HEK293
+description: Two incubation periods separated by a media exchange, then one image.
+
+conditions:
+  temperature_c: 37.0
+  co2_pct: 5.0
+
+steps:
+  - operation: INCUBATE
+    duration_min: 720
+  - operation: MEDIA_EXCHANGE
+  - operation: INCUBATE
+    duration_min: 1440
+  - operation: IMAGE
+  - operation: ARCHIVE

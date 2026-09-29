@@ -1,0 +1,19 @@
+# Short incubations and many station visits: maximises robot and station
+# traffic per simulated hour. Used for load and congestion scenarios.
+protocol: stress_test
+cell_type: CHO
+description: Rapid cycling between incubation, media exchange and imaging.
+
+steps:
+  - operation: INCUBATE
+    duration_min: 30
+  - operation: MEDIA_EXCHANGE
+  - operation: IMAGE
+  - operation: INCUBATE
+    duration_min: 30
+  - operation: MEDIA_EXCHANGE
+  - operation: IMAGE
+  - operation: INCUBATE
+    duration_min: 30
+  - operation: IMAGE
+  - operation: DISPOSE

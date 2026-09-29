@@ -17,7 +17,8 @@ def test_valid_protocol_keeps_step_order(basic_protocol: Protocol) -> None:
 
 
 def test_steps_list_is_stored_as_tuple() -> None:
-    protocol = Protocol("p", "HEK293", [ProtocolStep(Operation.IMAGE)])  # type: ignore[arg-type]
+    steps = [ProtocolStep(Operation.IMAGE), ProtocolStep(Operation.ARCHIVE)]
+    protocol = Protocol("p", "HEK293", steps)  # type: ignore[arg-type]
 
     assert isinstance(protocol.steps, tuple)
 
@@ -53,6 +54,11 @@ def test_terminal_step_must_be_last() -> None:
 
     with pytest.raises(ProtocolError, match="step 1 \\(ARCHIVE\\).*must be the last step"):
         Protocol("bad-order", "HEK293", steps)
+
+
+def test_protocol_must_end_with_terminal_step() -> None:
+    with pytest.raises(ProtocolError, match="must end with ARCHIVE or DISPOSE"):
+        Protocol("no-exit", "HEK293", (ProtocolStep(Operation.INCUBATE, 60),))
 
 
 def test_protocol_is_immutable(basic_protocol: Protocol) -> None:
