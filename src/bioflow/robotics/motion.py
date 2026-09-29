@@ -362,7 +362,7 @@ class GridMotion:
             raise SafetyViolationError(
                 ",".join(sorted(cycle)), f"unresolvable deadlock: livelock after {MAX_REPEATED_DEADLOCKS} attempts"
             )
-        logger.info("t=%.2f deadlock among %s", self._context.now, cycle)
+        logger.info("deadlock among %s", cycle)
         self._context.publish(MotionEvent.DEADLOCK_DETECTED, SOURCE_ID, payload={"robots": sorted(cycle)})
         yield_order = sorted(cycle, reverse=True)  # highest ID yields first
 

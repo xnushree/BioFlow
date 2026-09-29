@@ -24,6 +24,8 @@ from bioflow.faults.fault_injector import FaultInjector
 from bioflow.faults.monitoring import EquipmentMonitor
 from bioflow.faults.recovery import RecoveryManager
 from bioflow.robotics.layout import LabLayout
+from bioflow.telemetry.metrics import MetricsCollector
+from bioflow.telemetry.recorder import TelemetryLevel, TelemetryRecorder
 from bioflow.robotics.motion import GridMotion, MotionController, TimedMotion
 from bioflow.robotics.travel import TravelTimeModel
 from bioflow.scheduling.base_scheduler import Scheduler
@@ -41,11 +43,13 @@ class Laboratory:
         seed: int = 0,
         layout: LabLayout | None = None,
         fault_config: FaultConfig | None = None,
+        telemetry: TelemetryLevel | None = None,
     ) -> None:
         """With a ``layout``, robots move cell by cell with reservations and deadlock handling
         (GridMotion); without one, each trip is a single timed event (TimedMotion).
 
         ``fault_config`` sets monitoring and detection thresholds (defaults if omitted).
+        ``telemetry`` turns on structured event recording at that detail level (off by default).
         """
         self.engine = SimulationEngine(seed=seed)
         self.motion: MotionController
@@ -71,6 +75,8 @@ class Laboratory:
             self.engine, self.engine.bus, self.state, self.resources, self.dispatcher, self.detector,
             fault_config.recovery,
         )
+        self.metrics = MetricsCollector(self.engine.bus, equipment, ready_count=lambda: self.state.tasks.ready_count)
+        self.recorder = TelemetryRecorder(self.engine.bus, telemetry) if telemetry is not None else None
         self.monitor = EquipmentMonitor(
             self.engine, equipment, self.engine.rng, fault_config.monitoring,
             other_events_pending=lambda: self.engine.pending_count > 0,
@@ -107,6 +113,7 @@ class Laboratory:
 
     def run(self, until: float | None = None) -> RunSummary:
         self.engine.run(until=until)
+        completed = [t.completed_at for t in self.state.tasks if t.completed_at is not None]
         return summarize(
             self.state,
             scheduler=self.dispatcher.scheduler.name,
@@ -117,4 +124,5 @@ class Laboratory:
             faults=evaluate_detection(self.injector.faults, self.detector.detections)
             if self.injector.faults else None,
             recovery=self.recovery.report() if self.recovery.recoveries else None,
+            metrics=self.metrics.finalize(self.state, max(completed, default=self.engine.now)),
         )

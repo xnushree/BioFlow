@@ -113,7 +113,7 @@ class FaultInjector:
         apply(self._equipment[fault.equipment_id], fault.spec)
         fault.status = FaultStatus.ACTIVE
         fault.injected_at = self._context.now
-        logger.info("t=%.1f injected %s on %s", self._context.now, fault.fault_type, fault.equipment_id)
+        logger.info("injected %s on %s", fault.fault_type, fault.equipment_id)
         self._ground_truth(GroundTruthEvent.FAULT_INJECTED, fault)
         if fault.spec.duration_min is not None:
             self._context.schedule(fault.spec.duration_min, "FAULT_REPAIR", SOURCE_ID,

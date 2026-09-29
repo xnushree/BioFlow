@@ -181,7 +181,7 @@ class SimulationEngine:
         entry = heapq.heappop(self._queue)
         self._pending_ids.discard(entry.event.event_id)
         self.clock.advance_to(entry.timestamp)
-        logger.debug("t=%.3f run %s %s", entry.timestamp, entry.event.event_id, entry.event.event_type)
+        logger.debug("run %s %s", entry.event.event_id, entry.event.event_type)
         entry.handler(entry.event)
         self._events_processed += 1
         return entry.event

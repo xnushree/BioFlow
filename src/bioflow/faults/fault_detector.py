@@ -307,7 +307,7 @@ class FaultDetector:
         detection = Detection(f"DET{next(self._ids):04d}", fault_type, eid, category, self._context.now, evidence)
         self._detections.append(detection)
         self._active[(eid, category)] = detection
-        logger.warning("t=%.1f detected %s on %s: %s", self._context.now, fault_type, eid, evidence)
+        logger.warning("detected %s on %s: %s", fault_type, eid, evidence)
         self._context.publish(DetectionEvent.FAULT_DETECTED, SOURCE_ID, target=eid, payload={
             "detection_id": detection.detection_id, "fault_type": fault_type, "equipment_id": eid,
             "category": category, "evidence": evidence,

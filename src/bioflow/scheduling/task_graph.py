@@ -45,6 +45,10 @@ class TaskGraph:
         except KeyError:
             raise UnknownEntityError(task_id, "task") from None
 
+    @property
+    def ready_count(self) -> int:
+        return len(self._ready)
+
     def ready_tasks(self) -> list[Task]:
         """READY tasks in the order they became ready."""
         return list(self._ready.values())

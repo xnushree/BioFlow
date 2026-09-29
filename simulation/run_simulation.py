@@ -2,7 +2,9 @@
 
 Usage (from the project root):
     python simulation/run_simulation.py simulation/scenarios/basic_demo.yaml
-    python simulation/run_simulation.py simulation/scenarios/basic_demo.yaml --scheduler fifo --log-level INFO
+    python simulation/run_simulation.py simulation/scenarios/basic_demo.yaml --scheduler cost --log-level INFO
+    python simulation/run_simulation.py simulation/scenarios/multiple_failures.yaml \
+        --telemetry standard --telemetry-out results/simulations/multiple_failures.jsonl
 """
 
 from __future__ import annotations
@@ -13,9 +15,10 @@ import time
 from pathlib import Path
 
 from bioflow.core.exceptions import BioFlowError
-from bioflow.scenario import load_scenario, run_scenario
+from bioflow.scenario import build_laboratory, load_scenario
 from bioflow.scheduling.registry import SCHEDULERS
-from bioflow.telemetry.logger import VALID_LEVELS, configure_logging
+from bioflow.telemetry.logger import VALID_FORMATS, VALID_LEVELS, attach_clock, configure_logging
+from bioflow.telemetry.recorder import TelemetryLevel
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,13 +27,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scheduler", choices=sorted(SCHEDULERS), help="override the scenario's scheduler")
     parser.add_argument("--until", type=float, help="stop at this simulation time (minutes)")
     parser.add_argument("--log-level", default="WARNING", choices=VALID_LEVELS)
+    parser.add_argument("--log-format", default="text", choices=VALID_FORMATS)
+    parser.add_argument("--log-file", type=Path, help="also write logs to this file")
+    parser.add_argument("--telemetry", choices=[level.value for level in TelemetryLevel],
+                        help="record structured events at this detail level")
+    parser.add_argument("--telemetry-out", type=Path, help="write recorded events here as JSON Lines")
     args = parser.parse_args(argv)
+    if args.telemetry_out and not args.telemetry:
+        parser.error("--telemetry-out needs --telemetry")
 
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, args.log_file, fmt=args.log_format)
     try:
         scenario = load_scenario(args.scenario)
+        lab = build_laboratory(scenario, scheduler=args.scheduler,
+                               telemetry=TelemetryLevel(args.telemetry) if args.telemetry else None)
+        attach_clock(lab.engine.clock)
         started = time.perf_counter()
-        summary = run_scenario(scenario, scheduler=args.scheduler, until=args.until)
+        summary = lab.run(until=args.until)
         elapsed = time.perf_counter() - started
     except BioFlowError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -38,7 +51,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Scenario:           {scenario.name}  (seed {scenario.seed})")
     print(summary.format())
-    print(f"\nWall-clock time:    {elapsed:.3f} s")
+    print()
+    print(f"Wall-clock time:    {elapsed:.3f} s")
+    if args.telemetry_out and lab.recorder is not None:
+        written = lab.recorder.write_jsonl(args.telemetry_out)
+        print(f"Telemetry:          {written} records ({args.telemetry}) -> {args.telemetry_out}")
     return 2 if summary.stalled else 0
 
 

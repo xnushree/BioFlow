@@ -247,7 +247,7 @@ class RecoveryManager:
 
     def _block(self, recovery: Recovery, reason: str) -> None:
         recovery.blocked_reason = reason
-        logger.warning("t=%.1f recovery %s on hold: %s", self._context.now, recovery.recovery_id, reason)
+        logger.warning("recovery %s on hold: %s", recovery.recovery_id, reason)
         self._publish(RecoveryEvent.RECOVERY_BLOCKED, recovery, reason=reason)
         self._context.schedule(self.settings.max_hold_min, "RECOVERY_HOLD_EXPIRED", SOURCE_ID,
                                lambda event: self._hold_expired(recovery))
@@ -272,7 +272,7 @@ class RecoveryManager:
             plate = self._state.plate(plate_id)
             if not plate.is_finished:
                 plate.state = PlateState.QUARANTINED
-        logger.error("t=%.1f %s unrecoverable: %s", self._context.now, recovery.equipment_id, reason)
+        logger.error("%s unrecoverable: %s", recovery.equipment_id, reason)
         self._publish(RecoveryEvent.UNRECOVERABLE, recovery, reason=reason, plates=stranded)
 
     # ------------------------------------------------------------------ helpers

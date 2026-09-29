@@ -16,6 +16,7 @@ from bioflow.domain import ExperimentStatus, TaskStatus
 from bioflow.faults.diagnostics import DetectionReport
 from bioflow.faults.recovery import RecoveryReport
 from bioflow.robotics.motion import MotionStats
+from bioflow.telemetry.metrics import RunMetrics
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class RunSummary:
     motion: MotionStats | None = None  # robot coordination statistics (map-based runs only)
     faults: DetectionReport | None = None  # detection scorecard (runs with injected faults only)
     recovery: RecoveryReport | None = None  # what automatic recovery did (runs with detections only)
+    metrics: RunMetrics | None = None  # utilization, queues, waits, throughput
 
     @property
     def stalled(self) -> bool:
@@ -62,6 +64,7 @@ class RunSummary:
             f"Tasks completed:    {self.tasks_completed}/{self.tasks_total}",
             f"Deadline misses:    {self.deadline_violations}",
             f"Events processed:   {self.events_processed}",
+            *([self.metrics.format()] if self.metrics else []),
             *([f"Robot movement:     {self.motion.steps} steps, {self.motion.waits} waits, "
                f"{self.motion.reroutes} reroutes, {self.motion.deadlocks} deadlocks resolved"]
               if self.motion else []),
@@ -96,6 +99,7 @@ def summarize(
     motion: MotionStats | None = None,
     faults: DetectionReport | None = None,
     recovery: RecoveryReport | None = None,
+    metrics: RunMetrics | None = None,
 ) -> RunSummary:
     tasks = list(state.tasks)
     completion_times = [t.completed_at for t in tasks if t.completed_at is not None]
@@ -125,4 +129,5 @@ def summarize(
         motion=motion,
         faults=faults,
         recovery=recovery,
+        metrics=metrics,
     )

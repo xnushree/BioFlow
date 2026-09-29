@@ -32,6 +32,7 @@ from bioflow.robotics.layout import load_layout
 from bioflow.robotics.travel import ConstantTravelTime, MapTravelTime, TravelTimeModel
 from bioflow.scheduling.config import SchedulingConfig, load_scheduling_config
 from bioflow.scheduling.registry import create_scheduler
+from bioflow.telemetry.recorder import TelemetryLevel
 
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
 _TOP_OPTIONAL = (
@@ -163,10 +164,13 @@ def _parse_experiment(item: Any, number: int) -> ExperimentSpec:
 
 
 # ---------------------------------------------------------------- running
-def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Laboratory:
+def build_laboratory(
+    scenario: Scenario, scheduler: str | None = None, telemetry: TelemetryLevel | None = None
+) -> Laboratory:
     """Create the lab described by ``scenario`` and schedule its experiments.
 
     ``scheduler`` overrides the scenario's choice, for comparing policies on the same workload.
+    ``telemetry`` turns on structured event recording at that detail level.
     """
     protocols = load_protocol_library(scenario.protocol_dir)
     scheduling = (
@@ -184,6 +188,7 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
         seed=scenario.seed,
         layout=layout,
         fault_config=load_fault_config(scenario.fault_config) if scenario.fault_config else None,
+        telemetry=telemetry,
     )
     for spec in scenario.experiments:
         if spec.protocol not in protocols:

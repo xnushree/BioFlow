@@ -232,7 +232,7 @@ class Dispatcher:
                 cancelled += self._state.tasks.mark_failed(task.task_id, self._context.now)
             elif not task.is_terminal:
                 cancelled += self._state.tasks.cancel(task.task_id)
-        logger.warning("t=%.1f gave up on %s: %s", self._context.now, plate_id, reason)
+        logger.warning("gave up on %s: %s", plate_id, reason)
         for experiment_id in {t.experiment_id for t in cancelled}:
             self._finish_experiment_if_done(experiment_id)
         return cancelled
@@ -272,7 +272,7 @@ class Dispatcher:
         experiment = self._state.experiment(experiment_id)
         all_completed = all(t.status is TaskStatus.COMPLETED for t in self._state.tasks.tasks_for(experiment_id))
         experiment.status = ExperimentStatus.COMPLETED if all_completed else ExperimentStatus.FAILED
-        logger.info("experiment %s %s at t=%.1f", experiment_id, experiment.status, self._context.now)
+        logger.info("experiment %s %s", experiment_id, experiment.status)
         self._publish(DispatchEvent.EXPERIMENT_FINISHED, experiment_id=experiment_id, status=experiment.status)
 
     def _publish(self, event_type: DispatchEvent, **payload: Any) -> None:
