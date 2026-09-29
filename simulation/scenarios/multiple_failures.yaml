@@ -1,0 +1,39 @@
+# Multiple failures: one fault of every type, spread over the run, on the full
+# lab layout. Used to score fault detection (latency, classification, false
+# alarms) and, from Phase 17, automatic recovery.
+scenario: multiple_failures
+description: 20 standard + 8 time-lapse plates with ten injected faults of different types.
+seed: 11
+scheduler: fifo
+scheduling_config: configs/scheduling.yaml
+equipment_config: configs/equipment.yaml
+equipment_overrides:
+  robots: {count: 3}
+  incubators: {count: 3}
+  imaging_stations: {count: 2}
+laboratory_config: configs/laboratory.yaml
+fault_config: configs/faults.yaml
+protocol_dir: protocols
+
+experiments:
+  - id: EXP001
+    protocol: basic_experiment
+    plates: 20
+    priority: 1
+  - id: EXP002
+    protocol: imaging_experiment
+    plates: 8
+    priority: 3
+    submit_at_min: 30
+
+faults:
+  - {type: TEMPERATURE_EXCURSION, equipment: INCUBATOR_01, at_min: 200, duration_min: 60, severity: HIGH}
+  - {type: CO2_EXCURSION,         equipment: INCUBATOR_02, at_min: 300, duration_min: 45}
+  - {type: INCUBATOR_FAILURE,     equipment: INCUBATOR_03, at_min: 900, duration_min: 240, severity: CRITICAL}
+  - {type: SENSOR_FAILURE,        equipment: INCUBATOR_02, at_min: 500, duration_min: 60, mode: stuck}
+  - {type: IMAGING_FAILURE,       equipment: IMAGING_01,   at_min: 380, duration_min: 120, severity: HIGH}
+  - {type: MEDIA_STATION_FAILURE, equipment: MEDIA_01,     at_min: 730, duration_min: 90}
+  - {type: ROBOT_FAILURE,         equipment: ROBOT_02,     at_min: 5,   duration_min: 45, severity: HIGH}
+  - {type: ROBOT_TIMEOUT,         equipment: ROBOT_03,     at_min: 700, duration_min: 300, magnitude: 6}
+  - {type: COMMUNICATION_TIMEOUT, equipment: ROBOT_01,     at_min: 1500, duration_min: 20}
+  - {type: PLATE_DETECTION_FAILURE, equipment: ROBOT_01,   at_min: 1100, duration_min: 30}

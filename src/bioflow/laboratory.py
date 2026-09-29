@@ -15,9 +15,13 @@ from bioflow.core.simulation import SimulationEngine
 from bioflow.domain import EquipmentKind, Experiment
 from bioflow.equipment.config import EquipmentConfig
 from bioflow.equipment.factory import build_equipment
+from bioflow.equipment.robot import Robot
+from bioflow.faults.config import FaultConfig
+from bioflow.faults.diagnostics import evaluate_detection
 from bioflow.faults.fault import Fault, FaultSpec
+from bioflow.faults.fault_detector import ExpectedTransport, FaultDetector
 from bioflow.faults.fault_injector import FaultInjector
-from bioflow.faults.monitoring import EquipmentMonitor, MonitoringSettings
+from bioflow.faults.monitoring import EquipmentMonitor
 from bioflow.robotics.layout import LabLayout
 from bioflow.robotics.motion import GridMotion, MotionController, TimedMotion
 from bioflow.robotics.travel import TravelTimeModel
@@ -35,12 +39,12 @@ class Laboratory:
         travel: TravelTimeModel,
         seed: int = 0,
         layout: LabLayout | None = None,
-        monitoring: MonitoringSettings | None = None,
+        fault_config: FaultConfig | None = None,
     ) -> None:
         """With a ``layout``, robots move cell by cell with reservations and deadlock handling
         (GridMotion); without one, each trip is a single timed event (TimedMotion).
 
-        ``monitoring`` configures heartbeats and sensor readings (defaults if omitted).
+        ``fault_config`` sets monitoring and detection thresholds (defaults if omitted).
         """
         self.engine = SimulationEngine(seed=seed)
         self.motion: MotionController
@@ -54,12 +58,28 @@ class Laboratory:
         self.state = StateManager(equipment)
         self.resources = ResourceManager(equipment, self.engine, self.engine.bus)
         self.dispatcher = Dispatcher(self.state, self.resources, scheduler, travel, self.engine, self.engine.bus)
+        fault_config = fault_config or FaultConfig()
         self.injector = FaultInjector(self.engine, equipment, self.motion)
+        self.detector = FaultDetector(
+            self.engine, self.engine.bus, {eid: eq.kind for eid, eq in equipment.items()},
+            fault_config.detection, expected_transport=self._expected_transport_factory(travel),
+            heartbeat_interval_min=fault_config.monitoring.heartbeat_interval_min,
+            nominal_step_min=layout.map.cell_size_m / layout.robot_speed_m_per_min if layout else None,
+        )
         self.monitor = EquipmentMonitor(
-            self.engine, equipment, self.engine.rng, monitoring or MonitoringSettings(),
+            self.engine, equipment, self.engine.rng, fault_config.monitoring,
             other_events_pending=lambda: self.engine.pending_count > 0,
             work_remaining=lambda: any(not task.is_terminal for task in self.state.tasks),
         )
+
+    def _expected_transport_factory(self, travel: TravelTimeModel) -> ExpectedTransport:
+        """Nominal transport duration, used by the detector to decide what counts as overdue."""
+        def expected(robot_id: str, source: str, destination: str) -> float:
+            robot = self.state.equipment_item(robot_id)
+            assert isinstance(robot, Robot)
+            return (travel.travel_time(robot.location_id, source) + robot.spec.pick_time_min
+                    + travel.travel_time(source, destination) + robot.spec.place_time_min)
+        return expected
 
     def schedule_experiment(self, experiment: Experiment) -> None:
         """Submit ``experiment`` when simulation time reaches its ``submitted_at``."""
@@ -89,4 +109,6 @@ class Laboratory:
             events_processed=self.engine.events_processed,
             queue_empty=self.engine.pending_count == 0,
             motion=self.motion.stats if isinstance(self.motion, GridMotion) else None,
+            faults=evaluate_detection(self.injector.faults, self.detector.detections)
+            if self.injector.faults else None,
         )

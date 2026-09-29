@@ -24,6 +24,7 @@ from bioflow.core.exceptions import BioFlowError, ConfigurationError
 from bioflow.core.validation import is_int, is_number, suggest
 from bioflow.domain import Experiment
 from bioflow.equipment.config import load_equipment_config
+from bioflow.faults.config import load_fault_config
 from bioflow.faults.fault import FaultSpec, FaultType, Severity
 from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
@@ -35,7 +36,7 @@ from bioflow.scheduling.registry import create_scheduler
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
 _TOP_OPTIONAL = (
     "description", "seed", "scheduler", "scheduling_config", "travel_time_min", "laboratory_config",
-    "equipment_overrides", "faults",
+    "equipment_overrides", "faults", "fault_config",
 )
 _EXPERIMENT_REQUIRED = ("id", "protocol", "plates")
 _EXPERIMENT_OPTIONAL = ("priority", "submit_at_min", "deadline_min")
@@ -69,6 +70,7 @@ class Scenario:
     laboratory_config: Path | None = None
     equipment_overrides: Mapping[str, Any] | None = None
     faults: tuple[FaultSpec, ...] = ()
+    fault_config: Path | None = None
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -114,6 +116,7 @@ def parse_scenario(data: Any) -> Scenario:
         equipment_overrides=_mapping(raw["equipment_overrides"], "equipment_overrides")
         if "equipment_overrides" in raw else None,
         faults=tuple(_parse_fault(item, n) for n, item in enumerate(_list(raw.get("faults"), "faults"), start=1)),
+        fault_config=Path(_text(raw, "fault_config")) if "fault_config" in raw else None,
     )
 
 
@@ -180,6 +183,7 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
         travel=travel,
         seed=scenario.seed,
         layout=layout,
+        fault_config=load_fault_config(scenario.fault_config) if scenario.fault_config else None,
     )
     for spec in scenario.experiments:
         if spec.protocol not in protocols:

@@ -1,0 +1,22 @@
+# Monitoring (what the plant reports) and fault detection (how symptoms are interpreted).
+# Times are simulated minutes.
+
+monitoring:
+  heartbeat_interval_min: 1.0
+  environment_every_n_heartbeats: 5      # incubator sensor reading every 5 minutes
+  idle_ticks_before_stop: 120            # keep watching a frozen lab this long before giving up
+
+detection:
+  heartbeat_timeout_min: 3.0             # silence longer than this is a symptom
+  transport_timeout_factor: 3.0          # a transport is overdue after 3x its expected time ...
+  transport_timeout_margin_min: 10.0     # ... plus 10 minutes (congestion causes normal delays)
+  processing_timeout_factor: 1.5
+  processing_timeout_margin_min: 5.0
+  excursion_confirmations: 2             # consecutive out-of-tolerance readings before diagnosing
+  normal_confirmations: 2                # consecutive normal readings before clearing
+  stuck_sensor_repeats: 3                # identical readings; real sensor noise makes this implausible
+  pick_failure_threshold: 3              # failed pick attempts before diagnosing the gripper sensor
+  slow_step_factor: 2.0                  # drive degraded if even the fastest of the last ...
+  slow_step_window: 5                    # ... 5 steps took more than 2x the nominal step time
+  plausible_temperature_c: [0.0, 60.0]   # readings outside these ranges mean the sensor is broken
+  plausible_co2_pct: [0.0, 25.0]

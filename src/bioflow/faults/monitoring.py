@@ -32,7 +32,8 @@ SOURCE_ID = "MONITOR"
 
 class MonitoringEvent(StrEnum):
     HEARTBEAT = "HEARTBEAT"  # source: equipment; payload: kind, state
-    ENVIRONMENT_READING = "ENVIRONMENT_READING"  # source: incubator; payload: temperature_c, co2_pct
+    ENVIRONMENT_READING = "ENVIRONMENT_READING"  # source: incubator; payload: readings, setpoint, tolerance
+    CYCLE_COMPLETED = "MONITOR_CYCLE"  # all heartbeats/readings for this tick have been sent
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ class EquipmentMonitor:
                                       payload={"kind": equipment.kind, "state": equipment.state})
         if self._tick_count % self.settings.environment_every_n_heartbeats == 0:
             self._sample_environment()
+        self._context.publish(MonitoringEvent.CYCLE_COMPLETED, SOURCE_ID, payload={"tick": self._tick_count})
 
         if self._other_events_pending():
             self._idle_ticks = 0
@@ -107,4 +109,6 @@ class EquipmentMonitor:
                     "temperature_c": temperature, "co2_pct": co2,
                     "setpoint_temperature_c": equipment.setpoint.temperature_c,
                     "setpoint_co2_pct": equipment.setpoint.co2_pct,
+                    "tolerance_temperature_c": equipment.setpoint.temperature_tolerance_c,
+                    "tolerance_co2_pct": equipment.setpoint.co2_tolerance_pct,
                 })

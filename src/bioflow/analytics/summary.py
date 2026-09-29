@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from bioflow.control.state_manager import StateManager
 from bioflow.core.clock import format_sim_time
 from bioflow.domain import ExperimentStatus, TaskStatus
+from bioflow.faults.diagnostics import DetectionReport
 from bioflow.robotics.motion import MotionStats
 
 
@@ -42,6 +43,7 @@ class RunSummary:
     experiments: tuple[ExperimentResult, ...]
     stalled_tasks: tuple[str, ...]  # unfinished tasks when the simulation ran out of events
     motion: MotionStats | None = None  # robot coordination statistics (map-based runs only)
+    faults: DetectionReport | None = None  # detection scorecard (runs with injected faults only)
 
     @property
     def stalled(self) -> bool:
@@ -72,6 +74,8 @@ class RunSummary:
                 f"{r.experiment_id:<12}{r.protocol:<20}{r.plates:>7}{r.priority:>6}  {r.status:<10}"
                 f"{finished:>10}{deadline:>10}  {'YES' if r.late else ''}"
             )
+        if self.faults:
+            lines += ["", "Fault detection (scored against ground truth):", self.faults.format()]
         if self.stalled:
             shown = ", ".join(self.stalled_tasks[:10])
             more = f" (+{len(self.stalled_tasks) - 10} more)" if len(self.stalled_tasks) > 10 else ""
@@ -86,6 +90,7 @@ def summarize(
     events_processed: int,
     queue_empty: bool,
     motion: MotionStats | None = None,
+    faults: DetectionReport | None = None,
 ) -> RunSummary:
     tasks = list(state.tasks)
     completion_times = [t.completed_at for t in tasks if t.completed_at is not None]
@@ -113,4 +118,5 @@ def summarize(
         experiments=tuple(results),
         stalled_tasks=unfinished if queue_empty else (),
         motion=motion,
+        faults=faults,
     )
