@@ -1,5 +1,6 @@
 """Dashboard tests: the Streamlit app runs headlessly (AppTest) on real simulation state."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,9 @@ from bioflow.service import SimulationService
 
 ROOT = Path(__file__).parents[2]
 APP = str(ROOT / "dashboard" / "app.py")
+# The dashboard's own modules ("components.*") are importable the same way Streamlit makes them:
+# from the dashboard directory. Set that up explicitly instead of relying on test order.
+sys.path.insert(0, str(ROOT / "dashboard"))
 PAGES = ["Overview", "Digital twin", "Experiments", "Equipment", "Robots", "Scheduler", "Faults", "Analytics"]
 
 
