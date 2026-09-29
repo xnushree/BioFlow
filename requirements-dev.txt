@@ -1,0 +1,4 @@
+# Development-only tools (not needed to run the simulator).
+-r requirements.txt
+pytest>=8.0
+pytest-cov>=5.0

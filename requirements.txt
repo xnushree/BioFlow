@@ -1,0 +1,6 @@
+# BioFlow-X runtime dependencies.
+# Rule: a package is added only in the phase that first uses it.
+#   PyYAML   -> Phase 2+ (configuration and protocols)
+# Planned later: fastapi/uvicorn (Phase 21), streamlit (22), pandas/matplotlib (24),
+#                scikit-learn (26). SQLite ships with Python, so the database needs no install.
+PyYAML>=6.0

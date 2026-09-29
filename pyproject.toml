@@ -1,0 +1,9 @@
+[project]
+name = "bioflow-x"
+version = "0.0.1"
+description = "Fault-tolerant digital twin and orchestration platform for a simulated cell-culture laboratory"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
