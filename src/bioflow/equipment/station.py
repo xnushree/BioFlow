@@ -102,6 +102,21 @@ class ProcessingStation(ContainerEquipment[StationState]):
         self._set_state(StationState.OCCUPIED)
         self._publish(EquipmentEvent.PROCESSING_COMPLETED, plate_id=plate_id, operation=self.operation)
 
+    def abort_processing(self) -> str | None:
+        """Give up on the current run (e.g. the station failed). Returns the plate that was being processed."""
+        plate_id = self._processing_plate_id
+        if plate_id is None:
+            return None
+        if self._timer_id is not None:
+            self._context.cancel(self._timer_id)
+            self._timer_id = None
+        self._processing_plate_id = None
+        self._slots.get(plate_id).state = PlateState.WAITING
+        return plate_id
+
+    def _state_after_recovery(self) -> StationState:
+        return StationState.OCCUPIED if self.occupancy else StationState.IDLE
+
     # -------------------------------------------- hidden hardware (injection)
     def fail_hardware(self) -> None:
         """The station stops working: any processing in progress hangs and never completes."""

@@ -24,12 +24,14 @@ def test_no_false_alarms_on_a_healthy_lab(scenario: str) -> None:
     assert lab.detector.detections == []
 
 
-def test_injected_faults_are_detected_and_correctly_classified() -> None:
+def test_ten_faults_detected_recovered_and_all_work_completed() -> None:
+    """Scenario 4 (multiple failures): one fault of every type, handled without human intervention."""
     lab = build_laboratory(load_scenario(SCENARIOS / "multiple_failures.yaml"))
     summary = lab.run()
 
-    report = summary.faults
-    assert report is not None
-    assert report.misclassified == 0
-    assert report.correct >= 8
-    assert report.mean_latency_min is not None and report.mean_latency_min < 30
+    assert summary.tasks_completed == summary.tasks_total
+    detection, recovery = summary.faults, summary.recovery
+    assert detection is not None and recovery is not None
+    assert (detection.correct, detection.misclassified, len(detection.missed)) == (10, 0, 0)
+    assert detection.false_positives == ()
+    assert recovery.completed == recovery.recoveries and recovery.unrecoverable == 0

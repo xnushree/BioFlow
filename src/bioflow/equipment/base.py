@@ -25,6 +25,8 @@ class Equipment(ABC, Generic[S]):
 
     transitions: ClassVar[TransitionTable[Any]]
     non_operational_states: ClassVar[frozenset[str]] = frozenset()
+    fault_state: ClassVar[str] = "FAULT"
+    recovery_state: ClassVar[str] = "RECOVERY"
 
     def __init__(
         self, equipment_id: str, kind: EquipmentKind, context: SimulationContext, initial_state: S
@@ -34,6 +36,7 @@ class Equipment(ABC, Generic[S]):
         self.kind = kind
         self._context = context
         self._state = initial_state
+        self._state_before_fault = initial_state
         # Hidden hardware condition, changed only by fault injection.
         self.comms_ok = True  # False: no heartbeats reach the control system
 
@@ -59,6 +62,24 @@ class Equipment(ABC, Generic[S]):
         self._publish(
             EquipmentEvent.STATE_CHANGED, kind=self.kind, from_state=old_state, to_state=new_state
         )
+
+    # ----------------------------------------------------- fault handling (control)
+    def enter_fault(self, state: S | None = None) -> None:
+        """Take the equipment out of service (the supervisory system's decision, after detection)."""
+        target = state if state is not None else type(self._state)(self.fault_state)
+        if self._state != target:
+            self._state_before_fault = self._state
+        self._set_state(target)
+
+    def begin_recovery(self) -> None:
+        self._set_state(type(self._state)(self.recovery_state))
+
+    def complete_recovery(self) -> None:
+        """Return to the normal state that matches the equipment's current condition."""
+        self._set_state(self._state_after_recovery())
+
+    def _state_after_recovery(self) -> S:
+        raise NotImplementedError(f"{type(self).__name__} cannot recover")
 
     def _publish(self, event_type: EquipmentEvent, **payload: Any) -> None:
         self._context.publish(event_type, self.equipment_id, payload=payload)

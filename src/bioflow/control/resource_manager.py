@@ -99,6 +99,8 @@ class ResourceManager:
         bus.subscribe(EquipmentEvent.PLATE_RECEIVED, self._on_plate_received)
         bus.subscribe(EquipmentEvent.PLATE_RELEASED, self._on_plate_released)
         bus.subscribe(EquipmentEvent.TRANSPORT_COMPLETED, self._on_transport_completed)
+        bus.subscribe(EquipmentEvent.STATE_CHANGED, self._on_state_changed)
+        self._out_of_service: set[str] = set()
 
     # ------------------------------------------------------------------ queries
     def status(self, resource_id: str) -> ResourceStatus:
@@ -109,7 +111,7 @@ class ResourceManager:
             capacity=container.capacity,
             occupancy=container.occupancy,
             reserved=len(self._by_resource[resource_id]),
-            operational=container.is_operational,
+            operational=container.is_operational and resource_id not in self._out_of_service,
         )
 
     def available(self, kind: EquipmentKind) -> list[str]:
@@ -119,7 +121,26 @@ class ResourceManager:
         )
 
     def available_robots(self) -> list[str]:
-        return sorted(eid for eid, robot in self._robots.items() if robot.is_idle)
+        return sorted(
+            eid for eid, robot in self._robots.items() if robot.is_idle and eid not in self._out_of_service
+        )
+
+    # --------------------------------------------------------- service status
+    def take_out_of_service(self, equipment_id: str) -> None:
+        """Stop offering this equipment for new work (e.g. unreachable, or awaiting maintenance).
+
+        Unlike a fault *state*, this leaves the equipment's own state machine alone, so work
+        already in progress (a robot finishing its current trip) can complete normally.
+        """
+        self._out_of_service.add(equipment_id)
+
+    def return_to_service(self, equipment_id: str) -> None:
+        if equipment_id in self._out_of_service:
+            self._out_of_service.discard(equipment_id)
+            self._announce_any(equipment_id)
+
+    def in_service(self, equipment_id: str) -> bool:
+        return equipment_id not in self._out_of_service
 
     def reservation_for_plate(self, plate_id: str) -> Reservation | None:
         return self._by_plate.get(plate_id)
@@ -199,11 +220,24 @@ class ResourceManager:
             self._announce_available(event.source)
 
     def _on_transport_completed(self, event: Event) -> None:
-        robot = self._robots.get(event.source)
-        if robot is not None and robot.is_idle:
+        self._announce_any(event.source)
+
+    def _on_state_changed(self, event: Event) -> None:
+        """Equipment coming back from a fault/recovery state offers its capacity again."""
+        equipment = self._containers.get(event.source) or self._robots.get(event.source)
+        if equipment is not None and equipment.is_operational and \
+                event.payload["from_state"] in equipment.non_operational_states:
+            self._announce_any(event.source)
+
+    def _announce_any(self, equipment_id: str) -> None:
+        if equipment_id in self._containers:
+            self._announce_available(equipment_id)
+            return
+        robot = self._robots.get(equipment_id)
+        if robot is not None and robot.is_idle and equipment_id not in self._out_of_service:
             self._context.publish(
-                ResourceEvent.AVAILABLE, SOURCE_ID, target=robot.equipment_id,
-                payload={"resource_id": robot.equipment_id, "kind": robot.kind, "free": 1},
+                ResourceEvent.AVAILABLE, SOURCE_ID, target=equipment_id,
+                payload={"resource_id": equipment_id, "kind": robot.kind, "free": 1},
             )
 
     # ------------------------------------------------------------------ helpers

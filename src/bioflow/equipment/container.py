@@ -60,7 +60,8 @@ class ContainerEquipment(Equipment[S]):
         plate.location_id = self.equipment_id
         plate.state = self.placed_plate_state
         self._publish(EquipmentEvent.PLATE_RECEIVED, plate_id=plate.plate_id)
-        self._after_occupancy_change()
+        if self.is_operational:  # a faulted unit keeps its fault state while plates are evacuated
+            self._after_occupancy_change()
 
     def release(self, plate_id: str) -> Plate:
         """Take a plate out. The caller (a robot) becomes responsible for its location."""
@@ -68,7 +69,8 @@ class ContainerEquipment(Equipment[S]):
         self._check_can_release(plate_id)
         plate = self._slots.remove(plate_id)
         self._publish(EquipmentEvent.PLATE_RELEASED, plate_id=plate_id)
-        self._after_occupancy_change()
+        if self.is_operational:
+            self._after_occupancy_change()
         return plate
 
     def _check_can_release(self, plate_id: str) -> None:

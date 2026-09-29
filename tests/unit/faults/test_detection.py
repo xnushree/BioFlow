@@ -79,7 +79,7 @@ def test_silent_station_is_a_communication_fault_that_clears(engine: SimulationE
 def test_silent_robot_frozen_mid_job_is_a_robot_failure(engine: SimulationEngine) -> None:
     feed = Feed(engine)
     feed.at(0.5, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_01", plate_id="P1", source="A", destination="B")
-    feed.at(1.5, MotionEvent.ROBOT_MOVED, "ROBOT_01")  # moved, then died between heartbeats
+    feed.at(1.5, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.1, step_cost=1.0)  # moved, then died
     feed.heartbeats(until=8, silent={"ROBOT_01": 2})
 
     assert types(feed.run()) == [("ROBOT_FAILURE", "ROBOT_01")]
@@ -89,7 +89,7 @@ def test_silent_robot_that_keeps_moving_has_lost_its_link(engine: SimulationEngi
     feed = Feed(engine)
     feed.at(0.5, EquipmentEvent.TRANSPORT_STARTED, "ROBOT_01", plate_id="P1", source="A", destination="B")
     for t in (3.5, 4.5, 5.5):
-        feed.at(t, MotionEvent.ROBOT_MOVED, "ROBOT_01")
+        feed.at(t, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.1, step_cost=1.0)
     feed.heartbeats(until=8, silent={"ROBOT_01": 2})
 
     assert types(feed.run()) == [("COMMUNICATION_TIMEOUT", "ROBOT_01")]
@@ -117,16 +117,25 @@ def test_overdue_transport_is_a_robot_timeout(engine: SimulationEngine) -> None:
 
 def test_consistently_slow_steps_are_a_robot_timeout(engine: SimulationEngine) -> None:
     feed = Feed(engine)
-    for n in range(6):
-        feed.at(1 + n * 0.25, MotionEvent.ROBOT_MOVED, "ROBOT_01")  # 2.5x the nominal 0.1 min per cell
+    for n in range(5):
+        feed.at(1 + n * 0.25, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.25, step_cost=1.0)  # 2.5x nominal
 
     assert types(feed.run()) == [("ROBOT_TIMEOUT", "ROBOT_01")]
 
 
-def test_waiting_in_traffic_is_not_a_slow_drive(engine: SimulationEngine) -> None:
+def test_following_a_slow_robot_is_not_a_slow_drive(engine: SimulationEngine) -> None:
+    """Steps arrive only every 0.25 min (queued behind someone), but each step's drive time is normal."""
     feed = Feed(engine)
-    for t in (1.0, 1.1, 3.0, 3.1, 6.0, 6.1, 9.0):  # long waits, but normal-speed steps in between
-        feed.at(t, MotionEvent.ROBOT_MOVED, "ROBOT_01")
+    for n in range(10):
+        feed.at(1 + n * 0.25, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.1, step_cost=1.0)
+
+    assert feed.run() == []
+
+
+def test_slow_zone_cells_are_judged_against_their_own_cost(engine: SimulationEngine) -> None:
+    feed = Feed(engine)
+    for n in range(5):  # 0.15 min in a 1.5x zone cell is exactly nominal
+        feed.at(1 + n * 0.15, MotionEvent.ROBOT_MOVED, "ROBOT_01", step_min=0.15, step_cost=1.5)
 
     assert feed.run() == []
 

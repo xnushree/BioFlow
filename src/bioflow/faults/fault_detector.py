@@ -13,7 +13,8 @@ Each detection belongs to a *category* per equipment, and at most one
 detection per (equipment, category) is active at a time:
 
     link        COMMUNICATION_TIMEOUT or ROBOT_FAILURE (from silence)
-    motion      ROBOT_TIMEOUT (slow steps on the map, or an overdue transport)
+    motion      ROBOT_TIMEOUT (slow drive: every recent step slower than nominal)
+    transport   ROBOT_TIMEOUT (a transport far past its expected duration)
     gripper     PLATE_DETECTION_FAILURE (repeated failed picks)
     processing  MEDIA_STATION_FAILURE / IMAGING_FAILURE (overdue processing)
     environment TEMPERATURE_EXCURSION / CO2_EXCURSION / INCUBATOR_FAILURE
@@ -106,7 +107,7 @@ class FaultDetector:
         self._expected_transport = expected_transport
         self._heartbeat_interval = heartbeat_interval_min
         self._nominal_step = nominal_step_min
-        self._recent_moves: dict[str, deque[float]] = {}
+        self._recent_moves: dict[str, deque[float]] = {}  # robot -> recent step drive-time ratios
         self._detections: list[Detection] = []
         self._active: dict[tuple[str, str], Detection] = {}
         self._ids = itertools.count(1)
@@ -125,6 +126,7 @@ class FaultDetector:
         bus.subscribe(MonitoringEvent.ENVIRONMENT_READING, self._on_reading)
         bus.subscribe(EquipmentEvent.TRANSPORT_STARTED, self._on_transport_started)
         bus.subscribe(EquipmentEvent.TRANSPORT_COMPLETED, self._on_transport_completed)
+        bus.subscribe(EquipmentEvent.TRANSPORT_ABORTED, self._on_transport_completed)
         bus.subscribe(EquipmentEvent.PROCESSING_STARTED, self._on_processing_started)
         bus.subscribe(EquipmentEvent.PROCESSING_COMPLETED, self._on_processing_completed)
         bus.subscribe(EquipmentEvent.PICK_FAILED, self._on_pick_failed)
@@ -165,7 +167,7 @@ class FaultDetector:
         for robot, timer in self._transports.items():
             limit = timer.expected_min * s.transport_timeout_factor + s.transport_timeout_margin_min
             if now - timer.started_at > limit and (robot, "link") not in self._active:
-                self._detect(robot, "motion", FaultType.ROBOT_TIMEOUT,
+                self._detect(robot, "transport", FaultType.ROBOT_TIMEOUT,
                              f"transport running {now - timer.started_at:.1f} min, expected ~{timer.expected_min:.1f}")
         for station, timer in list(self._processing.items()):
             limit = timer.expected_min * s.processing_timeout_factor + s.processing_timeout_margin_min
@@ -198,6 +200,7 @@ class FaultDetector:
         # Match on the plate, not just the robot: the dispatcher may start the robot's next job while
         # this completion is still being delivered, so late subscribers see the new job's START first.
         self._stop_timer(self._transports, event.source, event.payload["plate_id"])
+        self._clear(event.source, "transport", "transport finished")
 
     def _on_processing_started(self, event: Event) -> None:
         if self._kinds.get(event.source) in _STATION_FAULT:
@@ -225,16 +228,14 @@ class FaultDetector:
         if self._nominal_step is None:
             return
         s = self.settings
-        moves = self._recent_moves.setdefault(event.source, deque(maxlen=s.slow_step_window + 1))
-        moves.append(event.timestamp)
-        if len(moves) <= s.slow_step_window:
-            return
-        # Waiting inflates some intervals but never the fastest one, so the minimum measures the drive.
-        fastest = min(b - a for a, b in zip(moves, list(moves)[1:], strict=False))
-        if fastest > self._nominal_step * s.slow_step_factor:
+        # Drive time of the step relative to its nominal time; waiting before a step is excluded,
+        # so following a slow robot or queueing in traffic does not look like a slow drive.
+        ratio = float(event.payload["step_min"]) / (self._nominal_step * float(event.payload["step_cost"]))
+        ratios = self._recent_moves.setdefault(event.source, deque(maxlen=s.slow_step_window))
+        ratios.append(ratio)
+        if len(ratios) == s.slow_step_window and min(ratios) > s.slow_step_factor:
             self._detect(event.source, "motion", FaultType.ROBOT_TIMEOUT,
-                         f"fastest of last {s.slow_step_window} steps took {fastest:.3f} min "
-                         f"(nominal {self._nominal_step:.3f})")
+                         f"last {s.slow_step_window} steps each took at least {min(ratios):.1f}x nominal drive time")
 
     def _on_pick_failed(self, event: Event) -> None:
         attempts = int(event.payload["attempt"])
@@ -247,7 +248,7 @@ class FaultDetector:
 
     def _on_maintenance(self, event: Event) -> None:
         self._recent_moves.pop(event.source, None)  # judge a repaired drive afresh
-        for category in ("processing", "motion"):
+        for category in ("processing", "motion", "gripper"):
             self._clear(event.source, category, "maintenance completed")
 
     # ------------------------------------------------------------ environment

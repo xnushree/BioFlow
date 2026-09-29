@@ -25,7 +25,7 @@ class DetectionSettings:
     normal_confirmations: int = 2  # consecutive in-tolerance readings before clearing
     stuck_sensor_repeats: int = 3  # identical readings (impossible with real sensor noise)
     pick_failure_threshold: int = 3
-    slow_step_factor: float = 2.0  # even the fastest recent step is this much slower than nominal
+    slow_step_factor: float = 2.0  # every recent step's drive time is this much slower than nominal
     slow_step_window: int = 5  # number of recent steps considered
     plausible_temperature_c: tuple[float, float] = (0.0, 60.0)
     plausible_co2_pct: tuple[float, float] = (0.0, 25.0)
@@ -47,9 +47,18 @@ class DetectionSettings:
 
 
 @dataclass(frozen=True)
+class RecoverySettings:
+    max_hold_min: float = 240.0  # how long a safe hold may last before a fault is declared unrecoverable
+
+    def __post_init__(self) -> None:
+        require(self.max_hold_min > 0, "max_hold_min must be positive")
+
+
+@dataclass(frozen=True)
 class FaultConfig:
     monitoring: MonitoringSettings = field(default_factory=MonitoringSettings)
     detection: DetectionSettings = field(default_factory=DetectionSettings)
+    recovery: RecoverySettings = field(default_factory=RecoverySettings)
 
 
 def load_fault_config(path: Path) -> FaultConfig:
@@ -69,10 +78,11 @@ def parse_fault_config(data: Any) -> FaultConfig:
     raw = data or {}
     if not isinstance(raw, Mapping):
         raise ConfigurationError("fault config: expected a mapping")
-    _only(raw, ("monitoring", "detection"), "fault config")
+    _only(raw, ("monitoring", "detection", "recovery"), "fault config")
     return FaultConfig(
         monitoring=_build(MonitoringSettings, raw.get("monitoring"), "monitoring"),
         detection=_build(DetectionSettings, raw.get("detection"), "detection"),
+        recovery=_build(RecoverySettings, raw.get("recovery"), "recovery"),
     )
 
 

@@ -22,6 +22,7 @@ from bioflow.faults.fault import Fault, FaultSpec
 from bioflow.faults.fault_detector import ExpectedTransport, FaultDetector
 from bioflow.faults.fault_injector import FaultInjector
 from bioflow.faults.monitoring import EquipmentMonitor
+from bioflow.faults.recovery import RecoveryManager
 from bioflow.robotics.layout import LabLayout
 from bioflow.robotics.motion import GridMotion, MotionController, TimedMotion
 from bioflow.robotics.travel import TravelTimeModel
@@ -65,6 +66,10 @@ class Laboratory:
             fault_config.detection, expected_transport=self._expected_transport_factory(travel),
             heartbeat_interval_min=fault_config.monitoring.heartbeat_interval_min,
             nominal_step_min=layout.map.cell_size_m / layout.robot_speed_m_per_min if layout else None,
+        )
+        self.recovery = RecoveryManager(
+            self.engine, self.engine.bus, self.state, self.resources, self.dispatcher, self.detector,
+            fault_config.recovery,
         )
         self.monitor = EquipmentMonitor(
             self.engine, equipment, self.engine.rng, fault_config.monitoring,
@@ -111,4 +116,5 @@ class Laboratory:
             motion=self.motion.stats if isinstance(self.motion, GridMotion) else None,
             faults=evaluate_detection(self.injector.faults, self.detector.detections)
             if self.injector.faults else None,
+            recovery=self.recovery.report() if self.recovery.recoveries else None,
         )

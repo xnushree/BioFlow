@@ -69,7 +69,7 @@ class Incubator(ContainerEquipment[IncubatorState]):
             equipment_id, EquipmentKind.INCUBATOR, context, IncubatorState.AVAILABLE, spec.capacity
         )
         self.setpoint = spec.setpoint
-        self._timers: dict[str, str] = {}  # plate_id -> scheduled completion event_id
+        self._timers: dict[str, tuple[str, float]] = {}  # plate_id -> (completion event_id, due time)
         # Hidden hardware condition (set by fault injection).
         self._temperature_offset_c = 0.0
         self._co2_offset_pct = 0.0
@@ -92,7 +92,7 @@ class Incubator(ContainerEquipment[IncubatorState]):
             duration_min, _INCUBATION_TIMER, self.equipment_id, self._finish_incubation,
             payload={"plate_id": plate_id},
         )
-        self._timers[plate_id] = timer.event_id
+        self._timers[plate_id] = (timer.event_id, timer.timestamp)
         self._publish(
             EquipmentEvent.PROCESSING_STARTED,
             plate_id=plate_id, operation=Operation.INCUBATE, duration_min=duration_min,
@@ -103,6 +103,16 @@ class Incubator(ContainerEquipment[IncubatorState]):
         del self._timers[plate_id]
         self._slots.get(plate_id).state = PlateState.WAITING
         self._publish(EquipmentEvent.PROCESSING_COMPLETED, plate_id=plate_id, operation=Operation.INCUBATE)
+
+    def interrupt_incubation(self, plate_id: str) -> float:
+        """Stop incubating a plate early (e.g. to evacuate it). Returns the minutes still owed."""
+        event_id, due = self._timers.pop(plate_id)
+        self._context.cancel(event_id)
+        self._slots.get(plate_id).state = PlateState.WAITING
+        return max(due - self._context.now, 0.0)
+
+    def _state_after_recovery(self) -> IncubatorState:
+        return IncubatorState.FULL if self._slots.is_full else IncubatorState.AVAILABLE
 
     # ------------------------------------------------------------ environment
     def true_environment(self, now: float) -> tuple[float, float]:

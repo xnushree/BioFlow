@@ -41,6 +41,7 @@ from bioflow.scheduling.base_scheduler import Scheduler, SchedulingView
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "DISPATCHER"
+MIN_REQUEUED_DURATION_MIN = 0.1  # an interrupted incubation still needs a (tiny) positive duration
 
 
 class DispatchEvent(StrEnum):
@@ -48,6 +49,7 @@ class DispatchEvent(StrEnum):
     EXPERIMENT_FINISHED = "EXPERIMENT_FINISHED"  # payload: experiment_id, status
     TASK_DISPATCHED = "TASK_DISPATCHED"  # payload: task_id, plate_id, operation, destination, robot
     TASK_COMPLETED = "TASK_COMPLETED"  # payload: task_id, plate_id, operation, equipment
+    TASK_REQUEUED = "TASK_REQUEUED"  # payload: task_id, plate_id, operation, reason
 
 
 @dataclass(frozen=True)
@@ -187,8 +189,53 @@ class Dispatcher:
     # ------------------------------------------------------------ bus handlers
     def _on_plate_placed(self, event: Event) -> None:
         active = self._active.get(event.payload["plate_id"])
-        if active is not None and event.payload["destination"] == active.destination_id:
-            self._start_operation(self._state.tasks.get(active.task_id), active.destination_id)
+        if active is None or event.payload["destination"] != active.destination_id:
+            return
+        if not self._state.equipment_item(active.destination_id).is_operational:
+            # The destination failed while the plate was on its way: send it somewhere else.
+            self.requeue(active.task_id, f"{active.destination_id} failed before the plate arrived")
+            return
+        self._start_operation(self._state.tasks.get(active.task_id), active.destination_id)
+
+    # ----------------------------------------------------------------- recovery
+    def active_task_for(self, plate_id: str) -> str | None:
+        active = self._active.get(plate_id)
+        return active.task_id if active else None
+
+    def requeue(self, task_id: str, reason: str, remaining_duration_min: float | None = None) -> None:
+        """Put a RUNNING task back to READY so it is dispatched again (used by fault recovery).
+
+        Releases the task's reservation if the plate never arrived. ``remaining_duration_min``
+        shortens an interrupted incubation to the time still owed.
+        """
+        task = self._state.tasks.get(task_id)
+        self._active.pop(task.plate_id, None)
+        reservation = self._resources.reservation_for_plate(task.plate_id)
+        if reservation is not None:
+            self._resources.cancel(reservation.reservation_id)
+        if remaining_duration_min is not None:
+            task.duration_min = max(remaining_duration_min, MIN_REQUEUED_DURATION_MIN)
+        self._state.tasks.requeue(task_id, self._context.now)
+        self._publish(DispatchEvent.TASK_REQUEUED, task_id=task_id, plate_id=task.plate_id,
+                      operation=task.operation, reason=reason)
+        self.dispatch()
+
+    def fail_plate(self, plate_id: str, reason: str) -> list[Task]:
+        """Give up on a plate: cancel its unfinished work. Returns the cancelled tasks."""
+        self._active.pop(plate_id, None)
+        reservation = self._resources.reservation_for_plate(plate_id)
+        if reservation is not None:
+            self._resources.cancel(reservation.reservation_id)
+        cancelled: list[Task] = []
+        for task in [t for t in self._state.tasks if t.plate_id == plate_id and not t.is_terminal]:
+            if task.status is TaskStatus.RUNNING:
+                cancelled += self._state.tasks.mark_failed(task.task_id, self._context.now)
+            elif not task.is_terminal:
+                cancelled += self._state.tasks.cancel(task.task_id)
+        logger.warning("t=%.1f gave up on %s: %s", self._context.now, plate_id, reason)
+        for experiment_id in {t.experiment_id for t in cancelled}:
+            self._finish_experiment_if_done(experiment_id)
+        return cancelled
 
     def _on_processing_completed(self, event: Event) -> None:
         active = self._active.get(event.payload["plate_id"])

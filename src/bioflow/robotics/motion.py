@@ -72,9 +72,13 @@ class MotionController(Protocol):
         """Multiply the robot's travel times by ``factor`` (> 1 = slower, e.g. a degraded drive)."""
         ...
 
+    def cancel_trip(self, robot_id: str) -> None:
+        """Forget the robot's current destination; it stays where it is."""
+        ...
+
 
 class MotionEvent(StrEnum):
-    ROBOT_MOVED = "ROBOT_MOVED"  # payload: from_cell, to_cell
+    ROBOT_MOVED = "ROBOT_MOVED"  # payload: from_cell, to_cell, step_min (drive time), step_cost (map cost)
     ROBOT_WAITING = "ROBOT_WAITING"  # payload: cell, blocked_by
     ROBOT_REROUTED = "ROBOT_REROUTED"  # payload: reason
     DEADLOCK_DETECTED = "DEADLOCK_DETECTED"  # payload: robots
@@ -116,6 +120,11 @@ class TimedMotion:
     def set_speed_factor(self, robot_id: str, factor: float) -> None:
         self._speed_factor[robot_id] = factor
 
+    def cancel_trip(self, robot_id: str) -> None:
+        trip = self._trips.pop(robot_id, None)
+        if trip is not None and trip.event_id is not None:
+            self._context.cancel(trip.event_id)
+
     def _start_trip(self, robot_id: str, minutes: float, on_arrival: ArrivalCallback) -> None:
         trip = _Trip(on_arrival, due=self._context.now + minutes)
         self._trips[robot_id] = trip
@@ -150,6 +159,7 @@ class _RobotMotion:
     frozen: bool = False  # hardware failure: an obstacle until resumed
     speed_factor: float = 1.0
     step_event_id: str | None = None
+    step_started_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -221,11 +231,20 @@ class GridMotion:
 
     def resume(self, robot_id: str) -> None:
         motion = self._robots[robot_id]
+        if not motion.frozen:
+            return  # resuming twice must never schedule a second, overlapping step
         motion.frozen = False
         self._advance(motion)
 
     def set_speed_factor(self, robot_id: str, factor: float) -> None:
         self._robots[robot_id].speed_factor = factor
+
+    def cancel_trip(self, robot_id: str) -> None:
+        motion = self._robots[robot_id]
+        motion.goal, motion.on_arrival = None, None
+        motion.path = motion.path[:1] if motion.stepping else []
+        if motion.waiting_for is not None:
+            self._stop_waiting(motion)
 
     def robot_idle(self, robot_id: str) -> None:
         motion = self._robots[robot_id]
@@ -269,6 +288,7 @@ class GridMotion:
         next_cell = motion.path[0]
         if self._reservations.try_acquire(next_cell, motion.robot_id):
             motion.stepping = True
+            motion.step_started_at = self._context.now
             delay = self._map.step_cost(next_cell) * self._minutes_per_cost * motion.speed_factor
             motion.step_event_id = self._context.schedule(
                 delay, "ROBOT_STEP", motion.robot_id, lambda event: self._finish_step(motion)
@@ -281,8 +301,12 @@ class GridMotion:
         motion.stepping = False
         self._reservations.release(previous, motion.robot_id)
         self._steps += 1
-        self._context.publish(MotionEvent.ROBOT_MOVED, motion.robot_id,
-                              payload={"from_cell": previous, "to_cell": motion.cell})
+        # Position tracking sees when the robot left one cell and entered the next, so the pure
+        # drive time of the step is observable (waiting before the step is not included).
+        self._context.publish(MotionEvent.ROBOT_MOVED, motion.robot_id, payload={
+            "from_cell": previous, "to_cell": motion.cell,
+            "step_min": self._context.now - motion.step_started_at, "step_cost": self._map.step_cost(motion.cell),
+        })
         self._wake(previous)
         self._advance(motion)
 

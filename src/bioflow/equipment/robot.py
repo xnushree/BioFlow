@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Any
 
 from collections.abc import Callable
-from bioflow.core.exceptions import ResourceUnavailableError
+from bioflow.core.exceptions import ResourceUnavailableError, SafetyViolationError
 from bioflow.core.simulation import SimulationContext
 from bioflow.core.state_machine import TransitionTable
 from bioflow.core.validation import require
@@ -60,13 +60,16 @@ ROBOT_TRANSITIONS = TransitionTable.build(
     {
         RobotState.IDLE: {RobotState.ASSIGNED},
         RobotState.ASSIGNED: {RobotState.MOVING, RobotState.IDLE},  # IDLE: job withdrawn
-        RobotState.MOVING: {RobotState.PICKING, RobotState.SAFE_STOP},
-        RobotState.PICKING: {RobotState.TRANSPORTING},
+        # MOVING/PICKING -> IDLE: job aborted before the plate was picked up.
+        RobotState.MOVING: {RobotState.PICKING, RobotState.SAFE_STOP, RobotState.IDLE},
+        RobotState.PICKING: {RobotState.TRANSPORTING, RobotState.IDLE},
         RobotState.TRANSPORTING: {RobotState.PLACING, RobotState.SAFE_STOP},
         RobotState.PLACING: {RobotState.IDLE},
         RobotState.SAFE_STOP: {RobotState.RECOVERY},
         RobotState.FAULT: {RobotState.RECOVERY},
-        RobotState.RECOVERY: {RobotState.IDLE},
+        # After repair a robot either starts afresh (IDLE) or resumes the job it was frozen in.
+        RobotState.RECOVERY: {RobotState.IDLE, RobotState.MOVING, RobotState.PICKING,
+                              RobotState.TRANSPORTING, RobotState.PLACING},
     },
     from_any={RobotState.FAULT},
 )
@@ -145,7 +148,7 @@ class Robot(Equipment[RobotState]):
     def _arrive_at_source(self) -> None:
         job = self._current_job()
         self.location_id = job.source.equipment_id
-        self._set_state(RobotState.PICKING)
+        self._set_phase_state(RobotState.PICKING)
         self.pick_attempts = 0
         self._schedule_phase(self.spec.pick_time_min, _PICK_DONE, self._finish_pick)
 
@@ -153,24 +156,26 @@ class Robot(Equipment[RobotState]):
         job = self._current_job()
         self.pick_attempts += 1
         if not self.gripper_sensor_ok:
+            # Schedule the retry *before* announcing the failure: a listener may react by aborting
+            # this job (fault recovery), and the abort must be able to cancel the retry.
+            self._schedule_phase(self.spec.pick_time_min, _PICK_RETRY, self._finish_pick)
             # An observable error code, like a real robot controller would report.
             self._publish(EquipmentEvent.PICK_FAILED, plate_id=job.plate_id, source=job.source.equipment_id,
                           attempt=self.pick_attempts)
-            self._schedule_phase(self.spec.pick_time_min, _PICK_RETRY, self._finish_pick)
             return
         plate = job.source.release(job.plate_id)
         plate.location_id = self.equipment_id
         plate.state = PlateState.IN_TRANSIT
         self._carrying = plate
         self._publish(EquipmentEvent.PLATE_PICKED, plate_id=plate.plate_id, source=job.source.equipment_id)
-        self._set_state(RobotState.TRANSPORTING)
+        self._set_phase_state(RobotState.TRANSPORTING)
         self._motion.travel(
             self.equipment_id, job.source.equipment_id, job.destination.equipment_id, self._arrive_at_destination
         )
 
     def _arrive_at_destination(self) -> None:
         self.location_id = self._current_job().destination.equipment_id
-        self._set_state(RobotState.PLACING)
+        self._set_phase_state(RobotState.PLACING)
         self._schedule_phase(self.spec.place_time_min, _PLACE_DONE, self._finish_place)
 
     def _finish_place(self) -> None:
@@ -182,7 +187,7 @@ class Robot(Equipment[RobotState]):
         self._job = None
         self._publish(EquipmentEvent.PLATE_PLACED, plate_id=plate.plate_id, destination=job.destination.equipment_id)
         # Become IDLE *before* announcing completion so a listener can assign the next job immediately.
-        self._set_state(RobotState.IDLE)
+        self._set_phase_state(RobotState.IDLE)
         self._publish(EquipmentEvent.TRANSPORT_COMPLETED, **self._job_payload(job))
         if self.is_idle:  # a listener may already have assigned the next job
             self._motion.robot_idle(self.equipment_id)
@@ -216,6 +221,46 @@ class Robot(Equipment[RobotState]):
     def repair_hardware(self) -> None:
         """Hardware works again, but the robot stays frozen until recovery resumes it."""
         self.hardware_ok = True
+
+    # ----------------------------------------------------- fault handling (control)
+    def _set_phase_state(self, state: RobotState) -> None:
+        """Record physical progress through a job.
+
+        While the supervisory system holds the robot in FAULT or RECOVERY, physical progress
+        (possible if a fault was misdiagnosed, e.g. a lost link rather than a dead robot) is
+        remembered instead of applied, and complete_recovery() returns to it.
+        """
+        if self.state in (RobotState.FAULT, RobotState.RECOVERY):
+            self._state_before_fault = state
+        else:
+            self._set_state(state)
+
+    def abort_job(self) -> TransportJob:
+        """Give up the current job (only before the plate has been picked). Returns the abandoned job."""
+        job = self._current_job()
+        if self._carrying is not None:
+            raise SafetyViolationError(self.equipment_id, f"cannot abort while carrying {self._carrying.plate_id}")
+        if self._phase is not None and self._phase.event_id is not None:
+            self._context.cancel(self._phase.event_id)
+        self._phase = None
+        self._job = None
+        self._motion.cancel_trip(self.equipment_id)
+        self._set_phase_state(RobotState.IDLE)
+        self._publish(EquipmentEvent.TRANSPORT_ABORTED, **self._job_payload(job))
+        self._motion.robot_idle(self.equipment_id)  # go and park instead of blocking an access point
+        return job
+
+    def _state_after_recovery(self) -> RobotState:
+        return self._state_before_fault if self._job is not None else RobotState.IDLE
+
+    def complete_recovery(self) -> None:
+        """Back in service: resume the frozen job, or become idle (and go and park)."""
+        super().complete_recovery()
+        if self._job is not None:
+            self.resume()
+        else:
+            self._motion.resume(self.equipment_id)
+            self._motion.robot_idle(self.equipment_id)
 
     def resume(self) -> None:
         """Continue exactly where the robot stopped (after repair)."""

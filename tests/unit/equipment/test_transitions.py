@@ -24,14 +24,16 @@ def test_robot_transitions(assert_exact_transitions) -> None:
     normal_cycle = {
         ("IDLE", "ASSIGNED"),
         ("ASSIGNED", "MOVING"), ("ASSIGNED", "IDLE"),
-        ("MOVING", "PICKING"),
-        ("PICKING", "TRANSPORTING"),
+        ("MOVING", "PICKING"), ("MOVING", "IDLE"),  # IDLE: job aborted before pickup
+        ("PICKING", "TRANSPORTING"), ("PICKING", "IDLE"),
         ("TRANSPORTING", "PLACING"),
         ("PLACING", "IDLE"),
     }
     safety = {
         ("MOVING", "SAFE_STOP"), ("TRANSPORTING", "SAFE_STOP"),
         ("SAFE_STOP", "RECOVERY"), ("FAULT", "RECOVERY"), ("RECOVERY", "IDLE"),
+        # resuming the job the robot was frozen in after a repair
+        ("RECOVERY", "MOVING"), ("RECOVERY", "PICKING"), ("RECOVERY", "TRANSPORTING"), ("RECOVERY", "PLACING"),
     }
     assert_exact_transitions(ROBOT_TRANSITIONS, normal_cycle | safety | to_fault([s.value for s in RobotState]))
 

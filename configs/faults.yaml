@@ -16,7 +16,10 @@ detection:
   normal_confirmations: 2                # consecutive normal readings before clearing
   stuck_sensor_repeats: 3                # identical readings; real sensor noise makes this implausible
   pick_failure_threshold: 3              # failed pick attempts before diagnosing the gripper sensor
-  slow_step_factor: 2.0                  # drive degraded if even the fastest of the last ...
-  slow_step_window: 5                    # ... 5 steps took more than 2x the nominal step time
+  slow_step_factor: 2.0                  # drive degraded if each of the last ...
+  slow_step_window: 5                    # ... 5 steps took more than 2x its nominal drive time
   plausible_temperature_c: [0.0, 60.0]   # readings outside these ranges mean the sensor is broken
   plausible_co2_pct: [0.0, 25.0]
+
+recovery:
+  max_hold_min: 240.0                    # a safe hold longer than this makes the fault unrecoverable

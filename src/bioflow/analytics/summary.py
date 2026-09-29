@@ -14,6 +14,7 @@ from bioflow.control.state_manager import StateManager
 from bioflow.core.clock import format_sim_time
 from bioflow.domain import ExperimentStatus, TaskStatus
 from bioflow.faults.diagnostics import DetectionReport
+from bioflow.faults.recovery import RecoveryReport
 from bioflow.robotics.motion import MotionStats
 
 
@@ -44,6 +45,7 @@ class RunSummary:
     stalled_tasks: tuple[str, ...]  # unfinished tasks when the simulation ran out of events
     motion: MotionStats | None = None  # robot coordination statistics (map-based runs only)
     faults: DetectionReport | None = None  # detection scorecard (runs with injected faults only)
+    recovery: RecoveryReport | None = None  # what automatic recovery did (runs with detections only)
 
     @property
     def stalled(self) -> bool:
@@ -76,6 +78,8 @@ class RunSummary:
             )
         if self.faults:
             lines += ["", "Fault detection (scored against ground truth):", self.faults.format()]
+        if self.recovery:
+            lines += ["", self.recovery.format()]
         if self.stalled:
             shown = ", ".join(self.stalled_tasks[:10])
             more = f" (+{len(self.stalled_tasks) - 10} more)" if len(self.stalled_tasks) > 10 else ""
@@ -91,6 +95,7 @@ def summarize(
     queue_empty: bool,
     motion: MotionStats | None = None,
     faults: DetectionReport | None = None,
+    recovery: RecoveryReport | None = None,
 ) -> RunSummary:
     tasks = list(state.tasks)
     completion_times = [t.completed_at for t in tasks if t.completed_at is not None]
@@ -119,4 +124,5 @@ def summarize(
         stalled_tasks=unfinished if queue_empty else (),
         motion=motion,
         faults=faults,
+        recovery=recovery,
     )
