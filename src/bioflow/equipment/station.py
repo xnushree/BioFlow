@@ -13,6 +13,7 @@ from typing import Any
 from bioflow.core.events import Event
 from bioflow.core.exceptions import SafetyViolationError
 from bioflow.core.simulation import SimulationContext
+from bioflow.core.state_machine import TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain import EQUIPMENT_FOR_OPERATION, Operation, PlateState
 from bioflow.equipment.config import StationSpec
@@ -28,12 +29,28 @@ class StationState(StrEnum):
     IDLE = "IDLE"  # empty
     OCCUPIED = "OCCUPIED"  # holds a plate that is not being processed
     PROCESSING = "PROCESSING"
+    FAULT = "FAULT"
+    RECOVERY = "RECOVERY"
+
+
+STATION_TRANSITIONS = TransitionTable.build(
+    StationState,
+    {
+        StationState.IDLE: {StationState.OCCUPIED},
+        StationState.OCCUPIED: {StationState.IDLE, StationState.PROCESSING},
+        StationState.PROCESSING: {StationState.OCCUPIED},
+        StationState.FAULT: {StationState.RECOVERY},
+        StationState.RECOVERY: {StationState.IDLE, StationState.OCCUPIED},
+    },
+    from_any={StationState.FAULT},
+)
 
 
 class ProcessingStation(ContainerEquipment[StationState]):
     """Processes one plate at a time with the configured operation."""
 
     placed_plate_state = PlateState.WAITING
+    transitions = STATION_TRANSITIONS
 
     def __init__(
         self, equipment_id: str, context: SimulationContext, operation: Operation, spec: StationSpec

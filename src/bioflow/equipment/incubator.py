@@ -8,6 +8,7 @@ from typing import Any
 from bioflow.core.events import Event
 from bioflow.core.exceptions import SafetyViolationError
 from bioflow.core.simulation import SimulationContext
+from bioflow.core.state_machine import TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain import EquipmentKind, Operation, PlateState
 from bioflow.equipment.config import IncubatorSpec
@@ -20,6 +21,22 @@ _INCUBATION_TIMER = "INCUBATION_TIMER"
 class IncubatorState(StrEnum):
     AVAILABLE = "AVAILABLE"  # at least one free slot
     FULL = "FULL"
+    ENVIRONMENTAL_FAULT = "ENVIRONMENTAL_FAULT"  # temperature/CO2 out of tolerance
+    FAULT = "FAULT"  # hardware failure
+    RECOVERY = "RECOVERY"
+
+
+INCUBATOR_TRANSITIONS = TransitionTable.build(
+    IncubatorState,
+    {
+        IncubatorState.AVAILABLE: {IncubatorState.FULL, IncubatorState.ENVIRONMENTAL_FAULT},
+        IncubatorState.FULL: {IncubatorState.AVAILABLE, IncubatorState.ENVIRONMENTAL_FAULT},
+        IncubatorState.ENVIRONMENTAL_FAULT: {IncubatorState.RECOVERY},
+        IncubatorState.FAULT: {IncubatorState.RECOVERY},
+        IncubatorState.RECOVERY: {IncubatorState.AVAILABLE, IncubatorState.FULL},
+    },
+    from_any={IncubatorState.FAULT},
+)
 
 
 class Incubator(ContainerEquipment[IncubatorState]):
@@ -31,6 +48,7 @@ class Incubator(ContainerEquipment[IncubatorState]):
     """
 
     placed_plate_state = PlateState.WAITING
+    transitions = INCUBATOR_TRANSITIONS
 
     def __init__(self, equipment_id: str, context: SimulationContext, spec: IncubatorSpec) -> None:
         super().__init__(

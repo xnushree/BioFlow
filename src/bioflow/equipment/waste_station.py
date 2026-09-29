@@ -7,13 +7,14 @@ from bioflow.core.simulation import SimulationContext
 from bioflow.domain import EquipmentKind, PlateState
 from bioflow.equipment.config import ContainerSpec
 from bioflow.equipment.container import ContainerEquipment
-from bioflow.equipment.storage import StorageState
+from bioflow.equipment.storage import STORAGE_TRANSITIONS, StorageState
 
 
 class WasteStation(ContainerEquipment[StorageState]):
     """Uses the same AVAILABLE/FULL states as storage."""
 
     placed_plate_state = PlateState.DISPOSED
+    transitions = STORAGE_TRANSITIONS
 
     def __init__(self, equipment_id: str, context: SimulationContext, spec: ContainerSpec) -> None:
         super().__init__(

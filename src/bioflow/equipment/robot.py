@@ -20,6 +20,7 @@ from typing import Any
 from bioflow.core.events import Event, EventHandler
 from bioflow.core.exceptions import ResourceUnavailableError
 from bioflow.core.simulation import SimulationContext
+from bioflow.core.state_machine import TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain import EquipmentKind, Plate, PlateState
 from bioflow.equipment.base import Equipment, PlateHolder
@@ -39,6 +40,26 @@ class RobotState(StrEnum):
     PICKING = "PICKING"
     TRANSPORTING = "TRANSPORTING"  # travelling with the plate
     PLACING = "PLACING"
+    SAFE_STOP = "SAFE_STOP"  # halted mid-motion, holding position
+    FAULT = "FAULT"
+    RECOVERY = "RECOVERY"
+
+
+ROBOT_TRANSITIONS = TransitionTable.build(
+    RobotState,
+    {
+        RobotState.IDLE: {RobotState.ASSIGNED},
+        RobotState.ASSIGNED: {RobotState.MOVING, RobotState.IDLE},  # IDLE: job withdrawn
+        RobotState.MOVING: {RobotState.PICKING, RobotState.SAFE_STOP},
+        RobotState.PICKING: {RobotState.TRANSPORTING},
+        RobotState.TRANSPORTING: {RobotState.PLACING, RobotState.SAFE_STOP},
+        RobotState.PLACING: {RobotState.IDLE},
+        RobotState.SAFE_STOP: {RobotState.RECOVERY},
+        RobotState.FAULT: {RobotState.RECOVERY},
+        RobotState.RECOVERY: {RobotState.IDLE},
+    },
+    from_any={RobotState.FAULT},
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +84,8 @@ class TransportJob:
 
 class Robot(Equipment[RobotState]):
     """An exclusive transport resource that carries one plate at a time."""
+
+    transitions = ROBOT_TRANSITIONS
 
     def __init__(
         self, equipment_id: str, context: SimulationContext, spec: RobotSpec, home_location_id: str

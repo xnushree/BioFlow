@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from bioflow.core.state_machine import TransitionGuard, TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain.plate import Plate
 from bioflow.domain.protocol import Protocol
@@ -18,13 +19,30 @@ class ExperimentStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+EXPERIMENT_TRANSITIONS = TransitionTable.build(
+    ExperimentStatus,
+    {
+        ExperimentStatus.SUBMITTED: {ExperimentStatus.RUNNING},
+        ExperimentStatus.RUNNING: {ExperimentStatus.COMPLETED, ExperimentStatus.FAILED},
+    },
+    from_any={ExperimentStatus.CANCELLED},
+    terminal={ExperimentStatus.COMPLETED, ExperimentStatus.FAILED, ExperimentStatus.CANCELLED},
+)
+
+
 @dataclass(eq=False)
-class Experiment:
+class Experiment(TransitionGuard):
     """A request to run ``protocol`` on ``plate_count`` plates.
 
     ``priority``: higher number = more urgent. ``deadline``: absolute simulation
     time (minutes) by which every plate should finish, or ``None`` for no deadline.
+
+    Assigning ``experiment.status`` is validated against ``EXPERIMENT_TRANSITIONS``.
     """
+
+    _state_attr = "status"
+    _id_attr = "experiment_id"
+    _transitions = EXPERIMENT_TRANSITIONS
 
     experiment_id: str
     protocol: Protocol

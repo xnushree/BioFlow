@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from bioflow.core.exceptions import SafetyViolationError
 from bioflow.core.simulation import SimulationContext
+from bioflow.core.state_machine import TransitionTable
 from bioflow.domain import EquipmentKind, PlateState
 from bioflow.equipment.config import ContainerSpec
 from bioflow.equipment.container import ContainerEquipment
@@ -17,8 +18,16 @@ class StorageState(StrEnum):
     FULL = "FULL"
 
 
+# Passive containers have no moving parts to fail, so they have no fault states.
+STORAGE_TRANSITIONS = TransitionTable.build(
+    StorageState,
+    {StorageState.AVAILABLE: {StorageState.FULL}, StorageState.FULL: {StorageState.AVAILABLE}},
+)
+
+
 class Storage(ContainerEquipment[StorageState]):
     placed_plate_state = PlateState.STORED
+    transitions = STORAGE_TRANSITIONS
 
     def __init__(self, equipment_id: str, context: SimulationContext, spec: ContainerSpec) -> None:
         super().__init__(

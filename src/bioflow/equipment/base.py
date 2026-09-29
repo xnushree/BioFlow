@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, ClassVar, Generic, Protocol, TypeVar
 
 from bioflow.core.simulation import SimulationContext
+from bioflow.core.state_machine import TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain import EquipmentKind, Plate
 from bioflow.equipment.events import EquipmentEvent
@@ -17,10 +18,12 @@ S = TypeVar("S", bound=StrEnum)
 class Equipment(ABC, Generic[S]):
     """Identity, kind, current state, and event publishing for one piece of equipment.
 
-    State changes go through ``_set_state`` only. That single choke point is
-    where Phase 6 plugs in the transition rules, and it guarantees every state
-    change is announced on the bus.
+    State changes go through ``_set_state`` only. That single choke point
+    checks every change against the subclass's ``transitions`` table and
+    announces it on the bus.
     """
+
+    transitions: ClassVar[TransitionTable[Any]]
 
     def __init__(
         self, equipment_id: str, kind: EquipmentKind, context: SimulationContext, initial_state: S
@@ -38,6 +41,7 @@ class Equipment(ABC, Generic[S]):
     def _set_state(self, new_state: S) -> None:
         if new_state == self._state:
             return
+        self.transitions.check(self.equipment_id, self._state, new_state)
         old_state, self._state = self._state, new_state
         self._publish(
             EquipmentEvent.STATE_CHANGED, kind=self.kind, from_state=old_state, to_state=new_state

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from bioflow.core.state_machine import TransitionGuard, TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain.operation import Operation
 
@@ -22,14 +23,32 @@ TERMINAL_TASK_STATUSES = frozenset(
     {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
 )
 
+TASK_TRANSITIONS = TransitionTable.build(
+    TaskStatus,
+    {
+        TaskStatus.PENDING: {TaskStatus.READY},
+        TaskStatus.READY: {TaskStatus.RUNNING},
+        # RUNNING -> READY: interrupted (e.g. equipment fault) and re-queued.
+        TaskStatus.RUNNING: {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.READY},
+    },
+    from_any={TaskStatus.CANCELLED},
+    terminal=TERMINAL_TASK_STATUSES,
+)
+
 
 @dataclass(eq=False)
-class Task:
+class Task(TransitionGuard):
     """One operation on one plate, plus the IDs of tasks that must finish first.
 
     Dependencies are stored as task IDs rather than object references so tasks
     stay easy to persist (Phase 20) and serialise over the API (Phase 21).
+
+    Assigning ``task.status`` is validated against ``TASK_TRANSITIONS``.
     """
+
+    _state_attr = "status"
+    _id_attr = "task_id"
+    _transitions = TASK_TRANSITIONS
 
     task_id: str
     experiment_id: str

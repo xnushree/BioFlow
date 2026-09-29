@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from bioflow.core.exceptions import SimulationError
+from bioflow.core.state_machine import TransitionGuard, TransitionTable
 from bioflow.core.validation import require
 from bioflow.domain.conditions import CultureConditions
 
@@ -22,6 +23,22 @@ class PlateState(StrEnum):
     DISPOSED = "DISPOSED"
 
 
+PLATE_TRANSITIONS = TransitionTable.build(
+    PlateState,
+    {
+        PlateState.CREATED: {PlateState.STORED},
+        PlateState.STORED: {PlateState.IN_TRANSIT, PlateState.ARCHIVED},
+        PlateState.IN_TRANSIT: {PlateState.WAITING, PlateState.STORED, PlateState.DISPOSED},
+        PlateState.WAITING: {PlateState.INCUBATING, PlateState.PROCESSING, PlateState.IN_TRANSIT},
+        PlateState.INCUBATING: {PlateState.WAITING},
+        PlateState.PROCESSING: {PlateState.WAITING},
+        PlateState.QUARANTINED: {PlateState.IN_TRANSIT, PlateState.WAITING},
+    },
+    from_any={PlateState.QUARANTINED},  # contamination or a fault can isolate any live plate
+    terminal={PlateState.ARCHIVED, PlateState.DISPOSED},
+)
+
+
 class ContaminationStatus(StrEnum):
     CLEAN = "CLEAN"
     SUSPECTED = "SUSPECTED"
@@ -29,7 +46,7 @@ class ContaminationStatus(StrEnum):
 
 
 @dataclass(eq=False)
-class Plate:
+class Plate(TransitionGuard):
     """A single plate.
 
     Deliberately *not* stored here, to keep one source of truth:
@@ -39,7 +56,13 @@ class Plate:
 
     ``eq=False`` gives identity semantics: two Plate objects are the same plate
     only if they are the same object, and plates remain hashable while mutable.
+
+    Assigning ``plate.state`` is validated against ``PLATE_TRANSITIONS``.
     """
+
+    _state_attr = "state"
+    _id_attr = "plate_id"
+    _transitions = PLATE_TRANSITIONS
 
     plate_id: str
     experiment_id: str
