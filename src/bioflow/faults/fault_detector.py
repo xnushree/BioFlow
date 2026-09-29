@@ -197,8 +197,9 @@ class FaultDetector:
         )
 
     def _on_transport_completed(self, event: Event) -> None:
-        # Match on the plate, not just the robot: the dispatcher may start the robot's next job while
-        # this completion is still being delivered, so late subscribers see the new job's START first.
+        # Match on the plate, not just the robot, so one job's completion can never cancel the timer
+        # of the robot's next job. (This originally guarded against nested event delivery; the bus
+        # now delivers in causal order, and the check remains as cheap defence in depth.)
         self._stop_timer(self._transports, event.source, event.payload["plate_id"])
         self._clear(event.source, "transport", "transport finished")
 
