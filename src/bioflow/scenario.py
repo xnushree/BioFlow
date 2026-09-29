@@ -22,10 +22,11 @@ from bioflow.equipment.config import load_equipment_config
 from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
 from bioflow.robotics.travel import ConstantTravelTime
+from bioflow.scheduling.config import SchedulingConfig, load_scheduling_config
 from bioflow.scheduling.registry import create_scheduler
 
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
-_TOP_OPTIONAL = ("description", "seed", "scheduler", "travel_time_min")
+_TOP_OPTIONAL = ("description", "seed", "scheduler", "scheduling_config", "travel_time_min")
 _EXPERIMENT_REQUIRED = ("id", "protocol", "plates")
 _EXPERIMENT_OPTIONAL = ("priority", "submit_at_min", "deadline_min")
 DEFAULT_SCHEDULER = "fifo"
@@ -52,6 +53,7 @@ class Scenario:
     protocol_dir: Path
     travel_time_min: float
     experiments: tuple[ExperimentSpec, ...]
+    scheduling_config: Path | None = None
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -88,6 +90,7 @@ def parse_scenario(data: Any) -> Scenario:
         protocol_dir=Path(_text(raw, "protocol_dir")),
         travel_time_min=_number(raw, "travel_time_min", default=DEFAULT_TRAVEL_TIME_MIN),
         experiments=experiments,
+        scheduling_config=Path(_text(raw, "scheduling_config")) if "scheduling_config" in raw else None,
     )
 
 
@@ -115,9 +118,12 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
     ``scheduler`` overrides the scenario's choice, for comparing policies on the same workload.
     """
     protocols = load_protocol_library(scenario.protocol_dir)
+    scheduling = (
+        load_scheduling_config(scenario.scheduling_config) if scenario.scheduling_config else SchedulingConfig()
+    )
     lab = Laboratory(
         equipment_config=load_equipment_config(scenario.equipment_config),
-        scheduler=create_scheduler(scheduler or scenario.scheduler),
+        scheduler=create_scheduler(scheduler or scenario.scheduler, scheduling),
         travel=ConstantTravelTime(scenario.travel_time_min),
         seed=scenario.seed,
     )

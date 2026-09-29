@@ -38,8 +38,8 @@ def test_each_plate_is_a_chain() -> None:
 def test_tasks_copy_operation_and_duration() -> None:
     tasks = build_tasks(make_experiment(LINEAR, plates=1))
 
-    assert [(t.operation, t.duration_min) for t in tasks] == [
-        (Operation.INCUBATE, 720), (Operation.MEDIA_EXCHANGE, None), (Operation.ARCHIVE, None)
+    assert [(t.operation, t.duration_min, t.step) for t in tasks] == [
+        (Operation.INCUBATE, 720, 1), (Operation.MEDIA_EXCHANGE, None, 2), (Operation.ARCHIVE, None, 3)
     ]
 
 

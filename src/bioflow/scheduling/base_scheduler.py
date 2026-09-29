@@ -17,10 +17,19 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar, Protocol
 
-from bioflow.domain import Experiment, Plate, Task
+from bioflow.domain import EquipmentKind, Experiment, Plate, Task
+from bioflow.equipment.base import Equipment
 from bioflow.robotics.travel import TravelTimeModel
+
+
+class AvailabilityQuery(Protocol):
+    """The read-only part of the ResourceManager a policy may consult."""
+
+    def available(self, kind: EquipmentKind) -> list[str]: ...
+
+    def available_robots(self) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -30,6 +39,8 @@ class SchedulingView:
     now: float
     experiments: Mapping[str, Experiment]
     plates: Mapping[str, Plate]
+    equipment: Mapping[str, Equipment[Any]]
+    resources: AvailabilityQuery
     travel: TravelTimeModel
 
     def experiment_of(self, task: Task) -> Experiment:
@@ -37,6 +48,13 @@ class SchedulingView:
 
     def plate_of(self, task: Task) -> Plate:
         return self.plates[task.plate_id]
+
+    def plate_location(self, task: Task) -> str:
+        return self.plates[task.plate_id].location_id or ""
+
+    def location_of(self, equipment_id: str) -> str:
+        """Where a piece of equipment is; for a robot, where it currently stands."""
+        return getattr(self.equipment[equipment_id], "location_id", equipment_id)
 
 
 class Scheduler(ABC):

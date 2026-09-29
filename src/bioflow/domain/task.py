@@ -58,6 +58,8 @@ class Task(TransitionGuard):
     duration_min: float | None = None
     status: TaskStatus = TaskStatus.PENDING
     assigned_equipment_id: str | None = None
+    step: int | None = None  # 1-based protocol step number, when the task comes from a protocol
+    ready_at: float | None = None  # when the task last became READY (for waiting-time metrics)
     started_at: float | None = None
     completed_at: float | None = None
 

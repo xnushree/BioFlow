@@ -98,7 +98,7 @@ class Dispatcher:
 
         tasks = build_tasks(experiment)
         self._state.register_experiment(experiment, plates)
-        self._state.tasks.add_tasks(tasks)
+        self._state.tasks.add_tasks(tasks, now=self._context.now)
         for plate in plates:
             storage = self._state.equipment_item(self._resources.available(EquipmentKind.STORAGE)[0])
             storage.receive(plate)  # type: ignore[attr-defined]
@@ -128,7 +128,14 @@ class Dispatcher:
             self._dispatching = False
 
     def _dispatch_pass(self) -> None:
-        view = SchedulingView(self._context.now, self._state.experiments, self._state.plates, self._travel)
+        view = SchedulingView(
+            now=self._context.now,
+            experiments=self._state.experiments,
+            plates=self._state.plates,
+            equipment=self._state.equipment,
+            resources=self._resources,
+            travel=self._travel,
+        )
         for task in self._scheduler.order(self._state.tasks.ready_tasks(), view):
             # A task started earlier in this pass may have used the last robot or slot,
             # so feasibility is re-checked for each task rather than computed once.

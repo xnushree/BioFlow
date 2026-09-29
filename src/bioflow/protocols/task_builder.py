@@ -39,5 +39,6 @@ def build_tasks(experiment: Experiment) -> list[Task]:
                 operation=step.operation,
                 depends_on=depends_on,
                 duration_min=step.duration_min,
+                step=number,
             ))
     return tasks

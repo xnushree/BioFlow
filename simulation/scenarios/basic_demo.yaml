@@ -4,6 +4,7 @@ scenario: basic_demo
 description: 10 standard plates plus 4 time-lapse plates on the default equipment.
 seed: 42
 scheduler: fifo
+scheduling_config: configs/scheduling.yaml
 equipment_config: configs/equipment.yaml
 protocol_dir: protocols
 travel_time_min: 2.0

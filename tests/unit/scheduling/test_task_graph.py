@@ -39,8 +39,17 @@ def test_add_returns_immediately_ready_tasks() -> None:
 
 
 def test_completion_releases_branches(diamond: TaskGraph) -> None:
-    assert run(diamond, "A") == ["B", "C"]
+    assert run(diamond, "A", now=10.0) == ["B", "C"]
     assert ready_ids(diamond) == ["B", "C"]
+    assert diamond.get("B").ready_at == 11.0  # the moment A completed
+
+
+def test_ready_at_recorded_on_add() -> None:
+    graph = TaskGraph()
+    graph.add_tasks([task("A"), task("B", "A")], now=4.0)
+
+    assert graph.get("A").ready_at == 4.0
+    assert graph.get("B").ready_at is None
 
 
 def test_join_waits_for_every_dependency(diamond: TaskGraph) -> None:
@@ -73,11 +82,11 @@ def test_cannot_complete_a_task_that_is_not_running(diamond: TaskGraph) -> None:
 def test_requeue_returns_interrupted_task_to_ready(diamond: TaskGraph) -> None:
     diamond.mark_running("A", "INCUBATOR_01", 0.0)
 
-    diamond.requeue("A")
+    diamond.requeue("A", now=7.0)
 
     a = diamond.get("A")
     assert ready_ids(diamond) == ["A"]
-    assert (a.status, a.assigned_equipment_id, a.started_at) == (TaskStatus.READY, None, None)
+    assert (a.status, a.assigned_equipment_id, a.started_at, a.ready_at) == (TaskStatus.READY, None, None, 7.0)
 
 
 def test_failure_cancels_everything_downstream(diamond: TaskGraph) -> None:

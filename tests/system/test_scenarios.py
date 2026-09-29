@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from bioflow.core.exceptions import ConfigurationError
-from bioflow.scenario import load_scenario, parse_scenario, run_scenario
+from bioflow.scenario import build_laboratory, load_scenario, parse_scenario, run_scenario
 
 ROOT = Path(__file__).parents[2]
 BASIC_DEMO = ROOT / "simulation" / "scenarios" / "basic_demo.yaml"
@@ -97,3 +97,27 @@ def test_command_line_runner() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Tasks completed:    78/78" in result.stdout
+
+
+@pytest.mark.parametrize("scheduler", ["fifo", "priority", "deadline", "cost"])
+def test_every_policy_completes_the_demo_correctly(scheduler: str) -> None:
+    """Policies change *order*, never correctness: every task completes and dependencies hold."""
+    lab = build_laboratory(load_scenario(BASIC_DEMO), scheduler=scheduler)
+    summary = lab.run()
+
+    assert summary.scheduler == scheduler
+    assert summary.tasks_completed == summary.tasks_total
+    for task in lab.state.tasks:
+        for dep in task.depends_on:
+            assert task.started_at >= lab.state.tasks.get(dep).completed_at
+
+
+def test_compare_schedulers_script() -> None:
+    result = subprocess.run(
+        [sys.executable, "simulation/compare_schedulers.py", str(BASIC_DEMO)],
+        capture_output=True, text=True, cwd=ROOT, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    for name in ("fifo", "priority", "deadline", "cost"):
+        assert name in result.stdout

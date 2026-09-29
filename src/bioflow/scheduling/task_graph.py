@@ -64,8 +64,10 @@ class TaskGraph:
         return bool(tasks) and all(t.is_terminal for t in tasks)
 
     # ------------------------------------------------------------ construction
-    def add_tasks(self, tasks: Iterable[Task]) -> list[Task]:
+    def add_tasks(self, tasks: Iterable[Task], now: float = 0.0) -> list[Task]:
         """Add a batch of tasks atomically. Returns the tasks that are immediately READY.
+
+        ``now`` is recorded as ``ready_at`` for tasks that are ready straight away.
 
         Raises:
             ValidationError: duplicate IDs, a dependency that does not exist,
@@ -86,7 +88,7 @@ class TaskGraph:
         for task in batch:
             unfinished = sum(1 for dep in task.depends_on if self._tasks[dep].status is not TaskStatus.COMPLETED)
             if task.status is TaskStatus.PENDING and unfinished == 0:
-                self._make_ready(task)
+                self._make_ready(task, now)
                 newly_ready.append(task)
             elif task.status is TaskStatus.PENDING:
                 self._unfinished_deps[task.task_id] = unfinished
@@ -136,16 +138,17 @@ class TaskGraph:
             self._unfinished_deps[dep_id] -= 1
             if self._unfinished_deps[dep_id] == 0:
                 dependent = self._tasks[dep_id]
-                self._make_ready(dependent)
+                self._make_ready(dependent, now)
                 newly_ready.append(dependent)
         return newly_ready
 
-    def requeue(self, task_id: str) -> None:
+    def requeue(self, task_id: str, now: float) -> None:
         """Return an interrupted RUNNING task to READY (e.g. its equipment faulted)."""
         task = self.get(task_id)
         task.status = TaskStatus.READY
         task.assigned_equipment_id = None
         task.started_at = None
+        task.ready_at = now
         self._ready[task_id] = task
 
     def mark_failed(self, task_id: str, now: float) -> list[Task]:
@@ -165,8 +168,9 @@ class TaskGraph:
         return [task, *self._cancel_descendants(task_id)]
 
     # ------------------------------------------------------------------ helpers
-    def _make_ready(self, task: Task) -> None:
+    def _make_ready(self, task: Task, now: float) -> None:
         task.status = TaskStatus.READY
+        task.ready_at = now
         self._unfinished_deps.pop(task.task_id, None)
         self._ready[task.task_id] = task
 

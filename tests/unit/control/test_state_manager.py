@@ -42,7 +42,7 @@ def test_registries_are_read_only() -> None:
 
 def test_fifo_keeps_ready_order_and_picks_first_candidates() -> None:
     tasks = [Task(f"T{i}", "E", "P", Operation.IMAGE) for i in (3, 1, 2)]
-    view = SchedulingView(0.0, {}, {}, ConstantTravelTime(1.0))
+    view = SchedulingView(0.0, {}, {}, {}, None, ConstantTravelTime(1.0))  # type: ignore[arg-type]
     fifo = FifoScheduler()
 
     assert fifo.order(tasks, view) == tasks
