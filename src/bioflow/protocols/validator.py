@@ -24,7 +24,7 @@ from bioflow.domain import CultureConditions, Operation, Protocol, ProtocolStep
 
 REQUIRED_KEYS = ("protocol", "cell_type", "steps")
 OPTIONAL_KEYS = ("description", "conditions")
-STEP_KEYS = ("operation", "duration_min")
+STEP_KEYS = ("operation", "duration_min", "synchronize")
 CONDITION_KEYS = tuple(f.name for f in fields(CultureConditions))
 PROTOCOL_OPERATIONS = tuple(op.value for op in Operation if op.allowed_in_protocol)
 ALL_OPERATIONS = frozenset(op.value for op in Operation)
@@ -136,10 +136,13 @@ def _parse_step(raw: Any, location: str, issues: list[ValidationIssue]) -> Proto
     duration = raw.get("duration_min")
     if duration is not None and not _is_number(duration):
         issues.append(ValidationIssue(f"{location}.duration_min", f"expected a number, got {duration!r}"))
+    synchronize = raw.get("synchronize", False)
+    if not isinstance(synchronize, bool):
+        issues.append(ValidationIssue(f"{location}.synchronize", f"expected true or false, got {synchronize!r}"))
     if len(issues) > before:
         return None
     try:
-        return ProtocolStep(Operation(operation), duration)
+        return ProtocolStep(Operation(operation), duration, synchronize)
     except BioFlowError as error:  # step-level domain rules, e.g. INCUBATE needs a duration
         issues.append(ValidationIssue(location, str(error)))
         return None

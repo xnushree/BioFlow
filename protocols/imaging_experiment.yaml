@@ -1,5 +1,7 @@
 # Time-lapse imaging: image every 6 hours over 18 hours.
 # Imaging-heavy, so it stresses the imaging stations.
+# synchronize: every plate is imaged at the same time point: no plate starts an
+# IMAGE step until all plates in the experiment have finished the incubation before it.
 protocol: imaging_experiment
 cell_type: iPSC
 description: Three incubate-then-image cycles, with a longer imaging time.
@@ -13,12 +15,15 @@ steps:
     duration_min: 360
   - operation: IMAGE
     duration_min: 20
+    synchronize: true
   - operation: INCUBATE
     duration_min: 360
   - operation: IMAGE
     duration_min: 20
+    synchronize: true
   - operation: INCUBATE
     duration_min: 360
   - operation: IMAGE
     duration_min: 20
+    synchronize: true
   - operation: ARCHIVE

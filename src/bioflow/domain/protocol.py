@@ -17,10 +17,15 @@ class ProtocolStep:
 
     ``duration_min`` is mandatory for INCUBATE. For other operations it may be
     left as ``None``, meaning "use the executing equipment's configured time".
+
+    ``synchronize``: if True, no plate starts this step until *every* plate in
+    the experiment has finished the previous step (e.g. image all plates at the
+    same time point). It turns per-plate chains into a graph with join points.
     """
 
     operation: Operation
     duration_min: float | None = None
+    synchronize: bool = False
 
     def __post_init__(self) -> None:
         require(
@@ -59,6 +64,11 @@ class Protocol:
         require(bool(self.cell_type.strip()), f"{self.name}: cell_type must not be empty", ProtocolError)
         require(bool(self.steps), f"{self.name}: protocol has no steps", ProtocolError)
         self._check_terminal_steps(self.steps)
+        require(
+            not self.steps[0].synchronize,
+            f"{self.name}: step 1 cannot synchronize; there is no previous step to wait for",
+            ProtocolError,
+        )
 
     def _check_terminal_steps(self, steps: Sequence[ProtocolStep]) -> None:
         """Exactly the last step must end the workflow, so every plate has a final destination."""
