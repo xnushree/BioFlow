@@ -1,0 +1,29 @@
+# BioFlow-X equipment configuration.
+# Times are in simulated minutes. Every key is validated; unknown keys are errors.
+
+robots:
+  count: 2
+  pick_time_min: 0.5
+  place_time_min: 0.5
+
+incubators:
+  count: 2
+  capacity: 120
+  temperature_c: 37.0
+  co2_pct: 5.0
+
+media_stations:
+  count: 1
+  process_time_min: 15.0
+
+imaging_stations:
+  count: 1
+  process_time_min: 10.0
+
+storage:
+  count: 1
+  capacity: 500
+
+waste_stations:
+  count: 1
+  capacity: 200

@@ -11,6 +11,7 @@ from bioflow.core.exceptions import (
     ProtocolError,
     ResourceError,
     ResourceUnavailableError,
+    SafetyViolationError,
     SimulationError,
     UnknownEntityError,
     UnrecoverableFaultError,
@@ -23,6 +24,7 @@ from bioflow.core.exceptions import (
     [
         ConfigurationError("bad config"),
         ValidationError("negative duration"),
+        SafetyViolationError("IMAGING_01", "plate still processing"),
         ProtocolError("bad protocol"),
         SimulationError("event in the past"),
         UnknownEntityError("ROBOT_99", "robot"),

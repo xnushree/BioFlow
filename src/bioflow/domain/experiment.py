@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from bioflow.domain._validation import require
+from bioflow.core.validation import require
 from bioflow.domain.plate import Plate
 from bioflow.domain.protocol import Protocol
 

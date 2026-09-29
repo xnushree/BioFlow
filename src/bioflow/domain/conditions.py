@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bioflow.domain._validation import require
+from bioflow.core.validation import require
 
 DEFAULT_TEMPERATURE_C = 37.0
 DEFAULT_CO2_PCT = 5.0

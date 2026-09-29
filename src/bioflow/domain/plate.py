@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from bioflow.core.exceptions import SimulationError
-from bioflow.domain._validation import require
+from bioflow.core.validation import require
 from bioflow.domain.conditions import CultureConditions
 
 

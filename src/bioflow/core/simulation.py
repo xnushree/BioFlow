@@ -22,7 +22,7 @@ import math
 import random
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from bioflow.core.clock import SimulationClock
 from bioflow.core.event_bus import EventBus
@@ -30,6 +30,38 @@ from bioflow.core.events import Event, EventHandler
 from bioflow.core.exceptions import SimulationError
 
 logger = logging.getLogger(__name__)
+
+
+class SimulationContext(Protocol):
+    """What simulated components may do with the engine: read time, schedule
+    and cancel their own future events, and publish notifications.
+
+    Components depend on this interface, not on ``SimulationEngine``, so they
+    cannot call ``run``/``stop`` and can be tested with a lightweight fake.
+    """
+
+    @property
+    def now(self) -> float: ...
+
+    def schedule(
+        self,
+        delay: float,
+        event_type: str,
+        source: str,
+        handler: EventHandler,
+        target: str | None = None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> Event: ...
+
+    def cancel(self, event_id: str) -> bool: ...
+
+    def publish(
+        self,
+        event_type: str,
+        source: str,
+        target: str | None = None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> Event: ...
 
 
 @dataclass(order=True)

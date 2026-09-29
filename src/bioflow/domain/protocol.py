@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from bioflow.core.exceptions import ProtocolError
-from bioflow.domain._validation import require
+from bioflow.core.validation import require
 from bioflow.domain.conditions import CultureConditions
 from bioflow.domain.operation import Operation
 

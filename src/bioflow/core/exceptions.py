@@ -53,6 +53,15 @@ class InvalidTransitionError(BioFlowError):
         )
 
 
+class SafetyViolationError(BioFlowError):
+    """A command was refused because executing it would be physically unsafe,
+    e.g. removing a plate from a station while it is still being processed."""
+
+    def __init__(self, equipment_id: str, message: str) -> None:
+        self.equipment_id = equipment_id
+        super().__init__(f"{equipment_id}: {message}")
+
+
 class ResourceError(BioFlowError):
     """Base class for resource-allocation failures."""
 
