@@ -76,8 +76,8 @@ SMALL_LAB: dict[str, Any] = {
 def make_lab() -> Callable[..., Laboratory]:
     """Build a fully wired Laboratory; override any SMALL_LAB section, e.g. robots={"count": 1, ...}."""
 
-    def factory(travel_min: float = 2.0, scheduler: str = "fifo", **sections: Any) -> Laboratory:
+    def factory(travel_min: float = 2.0, scheduler: str = "fifo", telemetry: Any = None, **sections: Any) -> Laboratory:
         config = parse_equipment_config({**SMALL_LAB, **sections})
-        return Laboratory(config, create_scheduler(scheduler), ConstantTravelTime(travel_min))
+        return Laboratory(config, create_scheduler(scheduler), ConstantTravelTime(travel_min), telemetry=telemetry)
 
     return factory

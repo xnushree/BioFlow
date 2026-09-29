@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from bioflow.core.exceptions import BioFlowError
+from bioflow.database import Database, RunRepository
 from bioflow.scenario import build_laboratory, load_scenario
 from bioflow.scheduling.registry import SCHEDULERS
 from bioflow.telemetry.logger import VALID_FORMATS, VALID_LEVELS, attach_clock, configure_logging
@@ -32,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--telemetry", choices=[level.value for level in TelemetryLevel],
                         help="record structured events at this detail level")
     parser.add_argument("--telemetry-out", type=Path, help="write recorded events here as JSON Lines")
+    parser.add_argument("--db", type=Path, help="save the run to this SQLite database")
+    parser.add_argument("--label", help="label for the saved run (default: scenario/scheduler)")
     args = parser.parse_args(argv)
     if args.telemetry_out and not args.telemetry:
         parser.error("--telemetry-out needs --telemetry")
@@ -56,6 +59,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.telemetry_out and lab.recorder is not None:
         written = lab.recorder.write_jsonl(args.telemetry_out)
         print(f"Telemetry:          {written} records ({args.telemetry}) -> {args.telemetry_out}")
+    if args.db:
+        with Database(args.db) as database:
+            run_id = RunRepository(database).save_run(
+                lab, summary, label=args.label or f"{scenario.name}/{summary.scheduler}",
+                scenario=scenario.name, seed=scenario.seed,
+            )
+        print(f"Saved:              run {run_id} -> {args.db}")
     return 2 if summary.stalled else 0
 
 
