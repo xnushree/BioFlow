@@ -7,7 +7,7 @@ name = "bioflow-x"
 version = "0.1.0"
 description = "Fault-tolerant digital twin and orchestration platform for a simulated cell-culture laboratory"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0"]
+dependencies = ["PyYAML>=6.0", "fastapi>=0.115", "uvicorn>=0.30"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
