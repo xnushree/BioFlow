@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from bioflow.core.events import Event, EventHandler
+from collections.abc import Callable
 from bioflow.core.exceptions import ResourceUnavailableError
 from bioflow.core.simulation import SimulationContext
 from bioflow.core.state_machine import TransitionTable
@@ -29,6 +29,18 @@ from bioflow.robotics.motion import MotionController
 
 _PICK_DONE = "ROBOT_PICK_DONE"
 _PLACE_DONE = "ROBOT_PLACE_DONE"
+_PICK_RETRY = "ROBOT_PICK_RETRY"
+
+
+@dataclass
+class _Phase:
+    """A timed pick/place step that can be suspended by a hardware failure and resumed later."""
+
+    event_type: str
+    handler: Callable[[], None]
+    due: float
+    event_id: str | None = None
+    remaining: float | None = None  # set while suspended
 
 
 class RobotState(StrEnum):
@@ -95,7 +107,16 @@ class Robot(Equipment[RobotState]):
         self._motion = motion
         self._job: TransportJob | None = None
         self._carrying: Plate | None = None
+        self._phase: _Phase | None = None
+        self.pick_attempts = 0
+        # Hidden hardware condition, changed only by fault injection.
+        self.hardware_ok = True  # False: controller down, robot frozen in place
+        self.gripper_sensor_ok = True  # False: picks fail with "plate not detected"
         motion.register(equipment_id)
+
+    @property
+    def emits_heartbeat(self) -> bool:
+        return self.comms_ok and self.hardware_ok
 
     @property
     def is_idle(self) -> bool:
@@ -125,10 +146,18 @@ class Robot(Equipment[RobotState]):
         job = self._current_job()
         self.location_id = job.source.equipment_id
         self._set_state(RobotState.PICKING)
-        self._schedule(self.spec.pick_time_min, _PICK_DONE, self._finish_pick)
+        self.pick_attempts = 0
+        self._schedule_phase(self.spec.pick_time_min, _PICK_DONE, self._finish_pick)
 
-    def _finish_pick(self, event: Event) -> None:
+    def _finish_pick(self) -> None:
         job = self._current_job()
+        self.pick_attempts += 1
+        if not self.gripper_sensor_ok:
+            # An observable error code, like a real robot controller would report.
+            self._publish(EquipmentEvent.PICK_FAILED, plate_id=job.plate_id, source=job.source.equipment_id,
+                          attempt=self.pick_attempts)
+            self._schedule_phase(self.spec.pick_time_min, _PICK_RETRY, self._finish_pick)
+            return
         plate = job.source.release(job.plate_id)
         plate.location_id = self.equipment_id
         plate.state = PlateState.IN_TRANSIT
@@ -142,9 +171,9 @@ class Robot(Equipment[RobotState]):
     def _arrive_at_destination(self) -> None:
         self.location_id = self._current_job().destination.equipment_id
         self._set_state(RobotState.PLACING)
-        self._schedule(self.spec.place_time_min, _PLACE_DONE, self._finish_place)
+        self._schedule_phase(self.spec.place_time_min, _PLACE_DONE, self._finish_place)
 
-    def _finish_place(self, event: Event) -> None:
+    def _finish_place(self) -> None:
         job = self._current_job()
         plate = self._carrying
         assert plate is not None  # guaranteed by _finish_pick
@@ -162,9 +191,40 @@ class Robot(Equipment[RobotState]):
         assert self._job is not None, f"{self.equipment_id}: phase event fired without a job"
         return self._job
 
-    def _schedule(self, delay: float, event_type: str, handler: EventHandler) -> None:
-        job = self._current_job()
-        self._context.schedule(delay, event_type, self.equipment_id, handler, payload={"plate_id": job.plate_id})
+    def _schedule_phase(self, delay: float, event_type: str, handler: Callable[[], None]) -> None:
+        phase = _Phase(event_type, handler, due=self._context.now + delay)
+        self._phase = phase
+        phase.event_id = self._context.schedule(
+            delay, event_type, self.equipment_id, lambda event: self._run_phase(phase),
+            payload={"plate_id": self._current_job().plate_id},
+        ).event_id
+
+    def _run_phase(self, phase: _Phase) -> None:
+        self._phase = None
+        phase.handler()
+
+    # -------------------------------------------- hidden hardware (injection)
+    def fail_hardware(self) -> None:
+        """Controller failure: the robot freezes where it is, mid-motion or mid-pick/place."""
+        self.hardware_ok = False
+        if self._phase is not None and self._phase.event_id is not None:
+            self._context.cancel(self._phase.event_id)
+            self._phase.remaining = self._phase.due - self._context.now
+            self._phase.event_id = None
+        self._motion.freeze(self.equipment_id)
+
+    def repair_hardware(self) -> None:
+        """Hardware works again, but the robot stays frozen until recovery resumes it."""
+        self.hardware_ok = True
+
+    def resume(self) -> None:
+        """Continue exactly where the robot stopped (after repair)."""
+        require(self.hardware_ok, f"{self.equipment_id}: cannot resume while hardware is failed")
+        self._motion.resume(self.equipment_id)
+        phase = self._phase
+        if phase is not None and phase.remaining is not None:
+            self._phase = None
+            self._schedule_phase(phase.remaining, phase.event_type, phase.handler)
 
     @staticmethod
     def _job_payload(job: TransportJob) -> dict[str, str]:

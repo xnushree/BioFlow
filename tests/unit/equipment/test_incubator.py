@@ -109,8 +109,9 @@ def test_cannot_incubate_a_plate_that_is_not_inside(incubator: Incubator) -> Non
 def test_environment_starts_at_setpoint(engine: SimulationEngine) -> None:
     incubator = Incubator("INC", engine, IncubatorSpec(capacity=1, temperature_c=30.0, co2_pct=3.0))
 
-    assert (incubator.temperature_c, incubator.co2_pct) == (30.0, 3.0)
-    assert incubator.setpoint.is_within(incubator.temperature_c, incubator.co2_pct)
+    assert incubator.true_environment(engine.now) == (30.0, 3.0)
+    assert incubator.setpoint.is_within(*incubator.read_sensor(engine.rng))
+    assert incubator.snapshot()["temperature_c"] is not None  # the twin shows the last sensor reading
 
 
 def test_snapshot(incubator: Incubator, make_plate) -> None:

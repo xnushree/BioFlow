@@ -13,8 +13,9 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import yaml
 
@@ -23,6 +24,7 @@ from bioflow.core.exceptions import BioFlowError, ConfigurationError
 from bioflow.core.validation import is_int, is_number, suggest
 from bioflow.domain import Experiment
 from bioflow.equipment.config import load_equipment_config
+from bioflow.faults.fault import FaultSpec, FaultType, Severity
 from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
 from bioflow.robotics.layout import load_layout
@@ -33,10 +35,12 @@ from bioflow.scheduling.registry import create_scheduler
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
 _TOP_OPTIONAL = (
     "description", "seed", "scheduler", "scheduling_config", "travel_time_min", "laboratory_config",
-    "equipment_overrides",
+    "equipment_overrides", "faults",
 )
 _EXPERIMENT_REQUIRED = ("id", "protocol", "plates")
 _EXPERIMENT_OPTIONAL = ("priority", "submit_at_min", "deadline_min")
+_FAULT_REQUIRED = ("type", "equipment", "at_min")
+_FAULT_OPTIONAL = ("duration_min", "severity", "magnitude", "mode")
 DEFAULT_SCHEDULER = "fifo"
 DEFAULT_TRAVEL_TIME_MIN = 2.0
 
@@ -64,6 +68,7 @@ class Scenario:
     scheduling_config: Path | None = None
     laboratory_config: Path | None = None
     equipment_overrides: Mapping[str, Any] | None = None
+    faults: tuple[FaultSpec, ...] = ()
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -108,7 +113,33 @@ def parse_scenario(data: Any) -> Scenario:
         laboratory_config=Path(_text(raw, "laboratory_config")) if "laboratory_config" in raw else None,
         equipment_overrides=_mapping(raw["equipment_overrides"], "equipment_overrides")
         if "equipment_overrides" in raw else None,
+        faults=tuple(_parse_fault(item, n) for n, item in enumerate(_list(raw.get("faults"), "faults"), start=1)),
     )
+
+
+def _parse_fault(item: Any, number: int) -> FaultSpec:
+    where = f"fault {number}"
+    raw = _mapping(item, where)
+    _check_keys(raw, _FAULT_REQUIRED, _FAULT_OPTIONAL, where)
+    fault_type = _enum(raw, "type", FaultType, where)
+    severity = _enum(raw, "severity", Severity, where) if "severity" in raw else Severity.MEDIUM
+    duration = raw.get("duration_min")
+    magnitude = raw.get("magnitude")
+    for key, value in (("duration_min", duration), ("magnitude", magnitude)):
+        if value is not None and not is_number(value):
+            raise ConfigurationError(f"{where}.{key}: expected a number, got {value!r}")
+    try:
+        return FaultSpec(
+            fault_type=fault_type,
+            equipment_id=_text(raw, "equipment", where=where),
+            start_min=_number(raw, "at_min", where=where),
+            duration_min=duration,
+            severity=severity,
+            magnitude=magnitude,
+            metadata={"mode": raw["mode"]} if "mode" in raw else {},
+        )
+    except BioFlowError as error:
+        raise ConfigurationError(f"{where}: {error}") from error
 
 
 def _parse_experiment(item: Any, number: int) -> ExperimentSpec:
@@ -167,6 +198,11 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
         except BioFlowError as error:
             raise ConfigurationError(f"{spec.experiment_id}: {error}") from error
         lab.schedule_experiment(experiment)
+    for fault in scenario.faults:
+        try:
+            lab.schedule_fault(fault)
+        except BioFlowError as error:
+            raise ConfigurationError(f"fault on {fault.equipment_id}: {error}") from error
     return lab
 
 
@@ -210,3 +246,24 @@ def _number(raw: Mapping[str, Any], key: str, default: float | None = None, wher
     if not is_number(value):
         raise ConfigurationError(f"{where}.{key}: expected a number, got {value!r}")
     return float(value)
+
+
+def _list(value: Any, where: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConfigurationError(f"{where}: expected a list")
+    return value
+
+
+E = TypeVar("E", bound=StrEnum)
+
+
+def _enum(raw: Mapping[str, Any], key: str, enum: type[E], where: str) -> E:
+    value = raw[key]
+    names = [member.value for member in enum]
+    if value not in names:
+        raise ConfigurationError(
+            f"{where}.{key}: unknown value {value!r}{suggest(str(value), names)}; expected one of {', '.join(names)}"
+        )
+    return enum(value)

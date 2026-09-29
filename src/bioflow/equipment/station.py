@@ -66,6 +66,8 @@ class ProcessingStation(ContainerEquipment[StationState]):
         self.operation = operation
         self.spec = spec
         self._processing_plate_id: str | None = None
+        self._timer_id: str | None = None
+        self.hardware_ok = True  # hidden: False means processing silently never finishes
 
     @property
     def processing_plate_id(self) -> str | None:
@@ -82,10 +84,11 @@ class ProcessingStation(ContainerEquipment[StationState]):
         plate.state = PlateState.PROCESSING
         self._processing_plate_id = plate_id
         self._set_state(StationState.PROCESSING)
-        self._context.schedule(
-            duration, _PROCESSING_TIMER, self.equipment_id, self._finish_processing,
-            payload={"plate_id": plate_id},
-        )
+        if self.hardware_ok:
+            self._timer_id = self._context.schedule(
+                duration, _PROCESSING_TIMER, self.equipment_id, self._finish_processing,
+                payload={"plate_id": plate_id},
+            ).event_id
         self._publish(
             EquipmentEvent.PROCESSING_STARTED,
             plate_id=plate_id, operation=self.operation, duration_min=duration,
@@ -93,10 +96,23 @@ class ProcessingStation(ContainerEquipment[StationState]):
 
     def _finish_processing(self, event: Event) -> None:
         plate_id = event.payload["plate_id"]
+        self._timer_id = None
         self._processing_plate_id = None
         self._slots.get(plate_id).state = PlateState.WAITING
         self._set_state(StationState.OCCUPIED)
         self._publish(EquipmentEvent.PROCESSING_COMPLETED, plate_id=plate_id, operation=self.operation)
+
+    # -------------------------------------------- hidden hardware (injection)
+    def fail_hardware(self) -> None:
+        """The station stops working: any processing in progress hangs and never completes."""
+        self.hardware_ok = False
+        if self._timer_id is not None:
+            self._context.cancel(self._timer_id)
+            self._timer_id = None
+
+    def repair_hardware(self) -> None:
+        """Hardware works again. A hung processing run is *not* resumed: recovery decides what to do."""
+        self.hardware_ok = True
 
     def _check_can_release(self, plate_id: str) -> None:
         if plate_id == self._processing_plate_id:

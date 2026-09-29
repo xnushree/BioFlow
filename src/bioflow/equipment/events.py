@@ -12,5 +12,6 @@ class EquipmentEvent(StrEnum):
     PLATE_ARCHIVED = "PLATE_ARCHIVED"  # payload: plate_id
     TRANSPORT_STARTED = "TRANSPORT_STARTED"  # payload: plate_id, source, destination
     PLATE_PICKED = "PLATE_PICKED"  # payload: plate_id, source
+    PICK_FAILED = "PICK_FAILED"  # payload: plate_id, source, attempt (robot error code: plate not detected)
     PLATE_PLACED = "PLATE_PLACED"  # payload: plate_id, destination
     TRANSPORT_COMPLETED = "TRANSPORT_COMPLETED"  # payload: plate_id, source, destination

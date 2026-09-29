@@ -12,10 +12,12 @@ from bioflow.control.dispatcher import Dispatcher
 from bioflow.control.resource_manager import ResourceManager
 from bioflow.control.state_manager import StateManager
 from bioflow.core.simulation import SimulationEngine
-from bioflow.domain import Experiment
+from bioflow.domain import EquipmentKind, Experiment
 from bioflow.equipment.config import EquipmentConfig
-from bioflow.domain import EquipmentKind
 from bioflow.equipment.factory import build_equipment
+from bioflow.faults.fault import Fault, FaultSpec
+from bioflow.faults.fault_injector import FaultInjector
+from bioflow.faults.monitoring import EquipmentMonitor, MonitoringSettings
 from bioflow.robotics.layout import LabLayout
 from bioflow.robotics.motion import GridMotion, MotionController, TimedMotion
 from bioflow.robotics.travel import TravelTimeModel
@@ -33,9 +35,13 @@ class Laboratory:
         travel: TravelTimeModel,
         seed: int = 0,
         layout: LabLayout | None = None,
+        monitoring: MonitoringSettings | None = None,
     ) -> None:
         """With a ``layout``, robots move cell by cell with reservations and deadlock handling
-        (GridMotion); without one, each trip is a single timed event (TimedMotion)."""
+        (GridMotion); without one, each trip is a single timed event (TimedMotion).
+
+        ``monitoring`` configures heartbeats and sensor readings (defaults if omitted).
+        """
         self.engine = SimulationEngine(seed=seed)
         self.motion: MotionController
         if layout is None:
@@ -48,14 +54,31 @@ class Laboratory:
         self.state = StateManager(equipment)
         self.resources = ResourceManager(equipment, self.engine, self.engine.bus)
         self.dispatcher = Dispatcher(self.state, self.resources, scheduler, travel, self.engine, self.engine.bus)
+        self.injector = FaultInjector(self.engine, equipment, self.motion)
+        self.monitor = EquipmentMonitor(
+            self.engine, equipment, self.engine.rng, monitoring or MonitoringSettings(),
+            other_events_pending=lambda: self.engine.pending_count > 0,
+            work_remaining=lambda: any(not task.is_terminal for task in self.state.tasks),
+        )
 
     def schedule_experiment(self, experiment: Experiment) -> None:
         """Submit ``experiment`` when simulation time reaches its ``submitted_at``."""
         self.engine.schedule_at(
             experiment.submitted_at, EXPERIMENT_ARRIVAL, SOURCE_ID,
-            lambda event: self.dispatcher.submit(experiment),
+            lambda event: self._arrive(experiment),
             payload={"experiment_id": experiment.experiment_id},
         )
+        self.monitor.start()
+
+    def schedule_fault(self, spec: FaultSpec) -> Fault:
+        """Plan a hidden hardware fault (see bioflow.faults.fault_injector)."""
+        fault = self.injector.schedule(spec)
+        self.monitor.start()
+        return fault
+
+    def _arrive(self, experiment: Experiment) -> None:
+        self.dispatcher.submit(experiment)
+        self.monitor.start()  # it may have stopped while the lab was idle
 
     def run(self, until: float | None = None) -> RunSummary:
         self.engine.run(until=until)

@@ -60,6 +60,18 @@ class MotionController(Protocol):
         """The robot finished its job and has nothing to do."""
         ...
 
+    def freeze(self, robot_id: str) -> None:
+        """Stop the robot where it is (hardware failure). Its current trip is suspended."""
+        ...
+
+    def resume(self, robot_id: str) -> None:
+        """Continue a suspended trip."""
+        ...
+
+    def set_speed_factor(self, robot_id: str, factor: float) -> None:
+        """Multiply the robot's travel times by ``factor`` (> 1 = slower, e.g. a degraded drive)."""
+        ...
+
 
 class MotionEvent(StrEnum):
     ROBOT_MOVED = "ROBOT_MOVED"  # payload: from_cell, to_cell
@@ -76,18 +88,51 @@ class TimedMotion:
     def __init__(self, context: SimulationContext, travel: TravelTimeModel) -> None:
         self._context = context
         self._travel = travel
+        self._speed_factor: dict[str, float] = {}
+        self._trips: dict[str, _Trip] = {}
 
     def register(self, robot_id: str) -> None:
-        pass
+        self._speed_factor[robot_id] = 1.0
 
     def travel(self, robot_id: str, from_id: str, to_id: str, on_arrival: ArrivalCallback) -> None:
-        self._context.schedule(
-            self._travel.travel_time(from_id, to_id), "ROBOT_ARRIVED", robot_id, lambda event: on_arrival(),
-            payload={"from": from_id, "to": to_id},
-        )
+        minutes = self._travel.travel_time(from_id, to_id) * self._speed_factor.get(robot_id, 1.0)
+        self._start_trip(robot_id, minutes, on_arrival)
 
     def robot_idle(self, robot_id: str) -> None:
         pass
+
+    def freeze(self, robot_id: str) -> None:
+        trip = self._trips.get(robot_id)
+        if trip is not None and trip.event_id is not None:
+            self._context.cancel(trip.event_id)
+            trip.remaining = trip.due - self._context.now
+            trip.event_id = None
+
+    def resume(self, robot_id: str) -> None:
+        trip = self._trips.get(robot_id)
+        if trip is not None and trip.remaining is not None:
+            self._start_trip(robot_id, trip.remaining, trip.on_arrival)
+
+    def set_speed_factor(self, robot_id: str, factor: float) -> None:
+        self._speed_factor[robot_id] = factor
+
+    def _start_trip(self, robot_id: str, minutes: float, on_arrival: ArrivalCallback) -> None:
+        trip = _Trip(on_arrival, due=self._context.now + minutes)
+        self._trips[robot_id] = trip
+
+        def arrive(event: object) -> None:
+            del self._trips[robot_id]
+            on_arrival()
+
+        trip.event_id = self._context.schedule(minutes, "ROBOT_ARRIVED", robot_id, arrive).event_id
+
+
+@dataclass
+class _Trip:
+    on_arrival: ArrivalCallback
+    due: float
+    event_id: str | None = None
+    remaining: float | None = None  # set while frozen
 
 
 # ------------------------------------------------------------------- grid
@@ -102,6 +147,9 @@ class _RobotMotion:
     stepping: bool = False  # between acquiring the next cell and arriving in it
     idle: bool = True  # no job: may be nudged out of the way
     waiting_for: Cell | None = None
+    frozen: bool = False  # hardware failure: an obstacle until resumed
+    speed_factor: float = 1.0
+    step_event_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +207,26 @@ class GridMotion:
         motion.idle = False
         self._set_goal(motion, self._map.access_point(to_id), on_arrival)
 
+    def freeze(self, robot_id: str) -> None:
+        motion = self._robots[robot_id]
+        motion.frozen = True
+        if motion.stepping:  # abandon the half-finished step: stay in the current cell
+            assert motion.step_event_id is not None
+            self._context.cancel(motion.step_event_id)
+            motion.stepping = False
+            self._reservations.release(motion.path[0], robot_id)
+            self._wake(motion.path[0])
+        if motion.waiting_for is not None:
+            self._stop_waiting(motion)
+
+    def resume(self, robot_id: str) -> None:
+        motion = self._robots[robot_id]
+        motion.frozen = False
+        self._advance(motion)
+
+    def set_speed_factor(self, robot_id: str, factor: float) -> None:
+        self._robots[robot_id].speed_factor = factor
+
     def robot_idle(self, robot_id: str) -> None:
         motion = self._robots[robot_id]
         motion.idle = True
@@ -169,7 +237,7 @@ class GridMotion:
     # ------------------------------------------------------------ movement
     def _park(self, robot_id: str) -> None:
         motion = self._robots[robot_id]
-        if motion.idle and motion.goal is None and motion.cell != motion.parking:
+        if motion.idle and not motion.frozen and motion.goal is None and motion.cell != motion.parking:
             self._set_goal(motion, motion.parking, None)
 
     def _set_goal(self, motion: _RobotMotion, goal: Cell, on_arrival: ArrivalCallback | None) -> None:
@@ -184,7 +252,7 @@ class GridMotion:
 
     def _advance(self, motion: _RobotMotion) -> None:
         """Take the next step towards the goal, arrive, or start waiting."""
-        if motion.goal is None:
+        if motion.goal is None or motion.frozen:
             return
         if motion.cell == motion.goal:
             self._forget_deadlocks(motion.robot_id)  # progress: past deadlocks involving it are settled
@@ -201,8 +269,10 @@ class GridMotion:
         next_cell = motion.path[0]
         if self._reservations.try_acquire(next_cell, motion.robot_id):
             motion.stepping = True
-            delay = self._map.step_cost(next_cell) * self._minutes_per_cost
-            self._context.schedule(delay, "ROBOT_STEP", motion.robot_id, lambda event: self._finish_step(motion))
+            delay = self._map.step_cost(next_cell) * self._minutes_per_cost * motion.speed_factor
+            motion.step_event_id = self._context.schedule(
+                delay, "ROBOT_STEP", motion.robot_id, lambda event: self._finish_step(motion)
+            ).event_id
         else:
             self._wait(motion, next_cell)
 
@@ -235,7 +305,9 @@ class GridMotion:
             self._resolve_deadlock(cycle)
             return
         blocker = self._robots[blocker_id]
-        if blocker.idle and blocker.goal is None and not blocker.stepping:
+        if blocker.frozen:  # a broken-down robot is an obstacle: go around it if possible, else wait
+            self._reroute(motion, avoid={blocker.cell}, reason=f"{blocker.robot_id} broken down")
+        elif blocker.idle and blocker.goal is None and not blocker.stepping:
             self._get_past_idle_robot(motion, blocker)
 
     def _stop_waiting(self, motion: _RobotMotion) -> None:

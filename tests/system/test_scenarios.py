@@ -149,3 +149,37 @@ def test_compare_schedulers_script() -> None:
     assert result.returncode == 0, result.stderr
     for name in ("fifo", "priority", "deadline", "cost"):
         assert name in result.stdout
+
+
+def test_scenario_faults_are_scheduled(demo_data: dict[str, Any]) -> None:
+    demo_data["faults"] = [
+        {"type": "TEMPERATURE_EXCURSION", "equipment": "INCUBATOR_01", "at_min": 100, "duration_min": 60,
+         "severity": "HIGH", "magnitude": 3.0},
+        {"type": "SENSOR_FAILURE", "equipment": "INCUBATOR_02", "at_min": 50, "mode": "dropout"},
+    ]
+    lab = build_laboratory(parse_scenario(demo_data))
+
+    faults = lab.injector.faults
+    assert [(f.fault_type, f.equipment_id, f.spec.severity) for f in faults] == [
+        ("TEMPERATURE_EXCURSION", "INCUBATOR_01", "HIGH"), ("SENSOR_FAILURE", "INCUBATOR_02", "MEDIUM"),
+    ]
+    assert faults[1].spec.metadata["mode"] == "dropout"
+    lab.run(until=120)
+    assert faults[0].is_physically_present
+
+
+@pytest.mark.parametrize(
+    ("fault", "message"),
+    [
+        ({"type": "ROBOT_FAILUR", "equipment": "ROBOT_01", "at_min": 5}, "did you mean 'ROBOT_FAILURE'"),
+        ({"type": "IMAGING_FAILURE", "equipment": "ROBOT_01", "at_min": 5}, "cannot target ROBOT_01"),
+        ({"type": "ROBOT_FAILURE", "equipment": "ROBOT_09", "at_min": 5}, "Unknown equipment"),
+        ({"type": "ROBOT_FAILURE", "equipment": "ROBOT_01"}, "missing required key 'at_min'"),
+        ({"type": "ROBOT_FAILURE", "equipment": "ROBOT_01", "at_min": 5, "duration_min": -1}, "positive"),
+    ],
+)
+def test_invalid_scenario_faults(demo_data: dict[str, Any], fault: dict[str, Any], message: str) -> None:
+    demo_data["faults"] = [fault]
+
+    with pytest.raises(ConfigurationError, match=message):
+        build_laboratory(parse_scenario(demo_data))

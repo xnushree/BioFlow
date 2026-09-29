@@ -34,10 +34,17 @@ class Equipment(ABC, Generic[S]):
         self.kind = kind
         self._context = context
         self._state = initial_state
+        # Hidden hardware condition, changed only by fault injection.
+        self.comms_ok = True  # False: no heartbeats reach the control system
 
     @property
     def state(self) -> S:
         return self._state
+
+    @property
+    def emits_heartbeat(self) -> bool:
+        """Whether this equipment's periodic heartbeat currently reaches the control system."""
+        return self.comms_ok
 
     @property
     def is_operational(self) -> bool:
