@@ -49,6 +49,9 @@ class Incubator(ContainerEquipment[IncubatorState]):
 
     placed_plate_state = PlateState.WAITING
     transitions = INCUBATOR_TRANSITIONS
+    non_operational_states = frozenset(
+        {IncubatorState.ENVIRONMENTAL_FAULT, IncubatorState.FAULT, IncubatorState.RECOVERY}
+    )
 
     def __init__(self, equipment_id: str, context: SimulationContext, spec: IncubatorSpec) -> None:
         super().__init__(

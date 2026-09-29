@@ -86,6 +86,7 @@ class Robot(Equipment[RobotState]):
     """An exclusive transport resource that carries one plate at a time."""
 
     transitions = ROBOT_TRANSITIONS
+    non_operational_states = frozenset({RobotState.SAFE_STOP, RobotState.FAULT, RobotState.RECOVERY})
 
     def __init__(
         self, equipment_id: str, context: SimulationContext, spec: RobotSpec, home_location_id: str
@@ -98,6 +99,7 @@ class Robot(Equipment[RobotState]):
 
     @property
     def is_idle(self) -> bool:
+        """Free to accept a job. IDLE excludes every fault state, so no separate health check is needed."""
         return self.state is RobotState.IDLE
 
     @property

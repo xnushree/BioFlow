@@ -51,6 +51,7 @@ class ProcessingStation(ContainerEquipment[StationState]):
 
     placed_plate_state = PlateState.WAITING
     transitions = STATION_TRANSITIONS
+    non_operational_states = frozenset({StationState.FAULT, StationState.RECOVERY})
 
     def __init__(
         self, equipment_id: str, context: SimulationContext, operation: Operation, spec: StationSpec

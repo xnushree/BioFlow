@@ -24,6 +24,7 @@ class Equipment(ABC, Generic[S]):
     """
 
     transitions: ClassVar[TransitionTable[Any]]
+    non_operational_states: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(
         self, equipment_id: str, kind: EquipmentKind, context: SimulationContext, initial_state: S
@@ -37,6 +38,11 @@ class Equipment(ABC, Generic[S]):
     @property
     def state(self) -> S:
         return self._state
+
+    @property
+    def is_operational(self) -> bool:
+        """False while faulted or recovering; such equipment must not be given new work."""
+        return self._state not in self.non_operational_states
 
     def _set_state(self, new_state: S) -> None:
         if new_state == self._state:
