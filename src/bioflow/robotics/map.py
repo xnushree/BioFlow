@@ -109,6 +109,10 @@ class LabMap:
     def zones(self) -> tuple[Zone, ...]:
         return self._zones
 
+    @property
+    def blocked_areas(self) -> tuple[Rect, ...]:
+        return self._blocked_areas
+
     def placement(self, equipment_id: str) -> EquipmentPlacement:
         try:
             return self._placements[equipment_id]

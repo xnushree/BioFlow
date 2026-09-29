@@ -150,6 +150,11 @@ class MetricsCollector:
     def _on_cycle(self, event: Event) -> None:
         self._queue_samples.append((event.timestamp, self._ready_count()))
 
+    @property
+    def queue_samples(self) -> list[tuple[float, int]]:
+        """(simulation time, READY-task count) at each monitoring cycle."""
+        return list(self._queue_samples)
+
     def _on_requeued(self, event: Event) -> None:
         self._rescheduled += 1
 

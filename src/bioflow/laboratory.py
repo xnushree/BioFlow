@@ -52,6 +52,7 @@ class Laboratory:
         ``telemetry`` turns on structured event recording at that detail level (off by default).
         """
         self.engine = SimulationEngine(seed=seed)
+        self.layout = layout
         self.motion: MotionController
         if layout is None:
             self.motion = TimedMotion(self.engine, travel)

@@ -27,6 +27,8 @@ from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
 from bioflow.robotics.motion import GridMotion
 from bioflow.scenario import Scenario, build_laboratory, load_scenario
+from bioflow.scheduling.base_scheduler import SchedulingView
+from bioflow.scheduling.cost_scheduler import CostScheduler
 from bioflow.telemetry.recorder import TelemetryLevel, json_safe
 
 T = TypeVar("T")
@@ -284,6 +286,61 @@ class SimulationService:
             matching = [r for r in records if (event_type is None or r["event_type"] == event_type)
                         and (source is None or r["source"] == source)]
             return matching[-limit:]
+        return self.read(query)
+
+    def floor_plan(self) -> dict[str, Any] | None:
+        """Static layout for the digital-twin view (None for scenarios without a map)."""
+        def query(lab: Laboratory) -> dict[str, Any] | None:
+            if lab.layout is None:
+                return None
+            lab_map = lab.layout.map
+            return {
+                "width": lab_map.width, "height": lab_map.height, "cell_size_m": lab_map.cell_size_m,
+                "equipment": {
+                    eid: {"x": p.footprint.x, "y": p.footprint.y, "width": p.footprint.width,
+                          "height": p.footprint.height, "access": p.access}
+                    for eid in lab_map.equipment_ids if eid in lab.state.equipment
+                    for p in [lab_map.placement(eid)]
+                },
+                "blocked": [{"x": r.x, "y": r.y, "width": r.width, "height": r.height}
+                            for r in lab_map.blocked_areas],
+                "zones": [{"name": z.name, "x": z.area.x, "y": z.area.y, "width": z.area.width,
+                           "height": z.area.height, "cost": z.cost_multiplier} for z in lab_map.zones],
+                "parking": list(lab_map.parking),
+            }
+        return json_safe(self.read(query))
+
+    def scheduler_view(self, limit: int = 50) -> dict[str, Any]:
+        """Ready tasks in the order the active policy would try them, with a cost breakdown if available."""
+        def query(lab: Laboratory) -> dict[str, Any]:
+            view = SchedulingView(lab.engine.now, lab.state.experiments, lab.state.plates, lab.state.equipment,
+                                  lab.resources, lab.dispatcher.travel)
+            scheduler = lab.dispatcher.scheduler
+            rows = []
+            for rank, task in enumerate(scheduler.order(lab.state.tasks.ready_tasks(), view)[:limit], start=1):
+                experiment = view.experiment_of(task)
+                row: dict[str, Any] = {
+                    "rank": rank, "task_id": task.task_id, "operation": task.operation,
+                    "experiment": task.experiment_id, "priority": experiment.priority,
+                    "deadline": experiment.deadline, "waiting_min": lab.engine.now - (task.ready_at or lab.engine.now),
+                    "location": view.plate_location(task),
+                }
+                if isinstance(scheduler, CostScheduler):
+                    breakdown = scheduler.explain(task, view)
+                    row["cost_J"] = breakdown.total(scheduler.settings) if breakdown else None
+                    row["feasible_now"] = breakdown is not None
+                rows.append(row)
+            return {"scheduler": scheduler.name, "ready": lab.state.tasks.ready_count, "queue": rows}
+        return json_safe(self.read(query))
+
+    def timeseries(self) -> dict[str, list[dict[str, Any]]]:
+        """Time series for charts: cumulative completed tasks and the sampled ready-queue length."""
+        def query(lab: Laboratory) -> dict[str, list[dict[str, Any]]]:
+            done = sorted(t.completed_at for t in lab.state.tasks if t.completed_at is not None)
+            return {
+                "completions": [{"sim_time": t, "completed": n} for n, t in enumerate(done, start=1)],
+                "ready_queue": [{"sim_time": t, "ready": n} for t, n in lab.metrics.queue_samples],
+            }
         return self.read(query)
 
     # ------------------------------------------------------------------ views
