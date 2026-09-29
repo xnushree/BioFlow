@@ -6,8 +6,8 @@ seed: 42
 scheduler: fifo
 scheduling_config: configs/scheduling.yaml
 equipment_config: configs/equipment.yaml
+laboratory_config: configs/laboratory.yaml   # robot travel times from A* paths on the floor plan
 protocol_dir: protocols
-travel_time_min: 2.0
 
 experiments:
   - id: EXP001

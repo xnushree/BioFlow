@@ -144,6 +144,12 @@ def test_unreachable_equipment_is_reported() -> None:
     assert "robots cannot travel between STORAGE_01 and ['IMAGING_01']" in problems_of(blocked=wall_across_the_room)
 
 
+def test_obstacles_may_overlap_each_other() -> None:
+    lab = small_map(blocked=[Rect(5, 0, 1, 4), Rect(5, 2, 1, 2)])  # an L-shaped wall drawn as two rectangles
+
+    assert not lab.is_passable((5, 3))
+
+
 def test_all_problems_are_reported_together() -> None:
     text = problems_of(blocked=[Rect(1, 1, 2, 2), Rect(20, 0, 1, 1)])
 

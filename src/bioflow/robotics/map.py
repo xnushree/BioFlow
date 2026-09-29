@@ -169,9 +169,11 @@ class LabMap:
         for zone in self._zones:
             if zone.cost_multiplier < MIN_STEP_COST:
                 problems.append(f"zone '{zone.name}': cost must be >= {MIN_STEP_COST:g}, got {zone.cost_multiplier}")
+        # Equipment may not overlap anything; obstacles may overlap each other (walls drawn as several rectangles).
         for i, (name_a, a) in enumerate(named_areas):
             for name_b, b in named_areas[i + 1:]:
-                if set(a.cells()) & set(b.cells()):
+                involves_equipment = name_a.startswith("equipment") or name_b.startswith("equipment")
+                if involves_equipment and set(a.cells()) & set(b.cells()):
                     problems.append(f"{name_a} overlaps {name_b}")
         return problems
 

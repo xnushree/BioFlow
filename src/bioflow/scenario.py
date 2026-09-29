@@ -1,7 +1,11 @@
 """Scenario files: which lab, which scheduler, which experiments arrive when.
 
-Paths inside a scenario (``equipment_config``, ``protocol_dir``) are relative
-to the directory the simulation is run from, normally the project root.
+Paths inside a scenario (``equipment_config``, ``protocol_dir``, ...) are
+relative to the directory the simulation is run from, normally the project root.
+
+Travel times come from either a laboratory layout (``laboratory_config``: A*
+paths on the floor plan) or a fixed ``travel_time_min`` for every trip. A
+scenario may set one or the other, not both.
 """
 
 from __future__ import annotations
@@ -17,16 +21,17 @@ import yaml
 from bioflow.analytics.summary import RunSummary
 from bioflow.core.exceptions import BioFlowError, ConfigurationError
 from bioflow.core.validation import is_int, is_number, suggest
-from bioflow.domain import Experiment
+from bioflow.domain import EquipmentKind, Experiment
 from bioflow.equipment.config import load_equipment_config
 from bioflow.laboratory import Laboratory
 from bioflow.protocols import load_protocol_library
-from bioflow.robotics.travel import ConstantTravelTime
+from bioflow.robotics.layout import load_layout
+from bioflow.robotics.travel import ConstantTravelTime, MapTravelTime, TravelTimeModel
 from bioflow.scheduling.config import SchedulingConfig, load_scheduling_config
 from bioflow.scheduling.registry import create_scheduler
 
 _TOP_REQUIRED = ("scenario", "equipment_config", "protocol_dir", "experiments")
-_TOP_OPTIONAL = ("description", "seed", "scheduler", "scheduling_config", "travel_time_min")
+_TOP_OPTIONAL = ("description", "seed", "scheduler", "scheduling_config", "travel_time_min", "laboratory_config")
 _EXPERIMENT_REQUIRED = ("id", "protocol", "plates")
 _EXPERIMENT_OPTIONAL = ("priority", "submit_at_min", "deadline_min")
 DEFAULT_SCHEDULER = "fifo"
@@ -54,6 +59,7 @@ class Scenario:
     travel_time_min: float
     experiments: tuple[ExperimentSpec, ...]
     scheduling_config: Path | None = None
+    laboratory_config: Path | None = None
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -80,6 +86,10 @@ def parse_scenario(data: Any) -> Scenario:
     duplicates = sorted(i for i, count in Counter(ids).items() if count > 1)
     if duplicates:
         raise ConfigurationError(f"experiments: duplicate ids {duplicates}")
+    if "laboratory_config" in raw and "travel_time_min" in raw:
+        raise ConfigurationError(
+            "set either laboratory_config (map-based travel) or travel_time_min (fixed travel), not both"
+        )
 
     return Scenario(
         name=_text(raw, "scenario"),
@@ -91,6 +101,7 @@ def parse_scenario(data: Any) -> Scenario:
         travel_time_min=_number(raw, "travel_time_min", default=DEFAULT_TRAVEL_TIME_MIN),
         experiments=experiments,
         scheduling_config=Path(_text(raw, "scheduling_config")) if "scheduling_config" in raw else None,
+        laboratory_config=Path(_text(raw, "laboratory_config")) if "laboratory_config" in raw else None,
     )
 
 
@@ -124,9 +135,13 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
     lab = Laboratory(
         equipment_config=load_equipment_config(scenario.equipment_config),
         scheduler=create_scheduler(scheduler or scenario.scheduler, scheduling),
-        travel=ConstantTravelTime(scenario.travel_time_min),
+        travel=_travel_model(scenario),
         seed=scenario.seed,
     )
+    if isinstance(lab.dispatcher.travel, MapTravelTime):
+        lab.dispatcher.travel.map.check_covers(
+            eid for eid, eq in lab.state.equipment.items() if eq.kind is not EquipmentKind.ROBOT
+        )
     for spec in scenario.experiments:
         if spec.protocol not in protocols:
             raise ConfigurationError(
@@ -145,6 +160,13 @@ def build_laboratory(scenario: Scenario, scheduler: str | None = None) -> Labora
             raise ConfigurationError(f"{spec.experiment_id}: {error}") from error
         lab.schedule_experiment(experiment)
     return lab
+
+
+def _travel_model(scenario: Scenario) -> TravelTimeModel:
+    if scenario.laboratory_config is None:
+        return ConstantTravelTime(scenario.travel_time_min)
+    layout = load_layout(scenario.laboratory_config)
+    return MapTravelTime(layout.map, layout.robot_speed_m_per_min)
 
 
 def run_scenario(scenario: Scenario, scheduler: str | None = None, until: float | None = None) -> RunSummary:

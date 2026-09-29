@@ -83,6 +83,10 @@ class Dispatcher:
     def scheduler(self) -> Scheduler:
         return self._scheduler
 
+    @property
+    def travel(self) -> TravelTimeModel:
+        return self._travel
+
     # --------------------------------------------------------------- submission
     def submit(self, experiment: Experiment) -> None:
         """Create the experiment's plates in storage, add its tasks, and start dispatching.

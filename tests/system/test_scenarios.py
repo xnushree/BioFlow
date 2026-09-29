@@ -82,6 +82,34 @@ def test_invalid_scenarios_are_rejected(demo_data: dict[str, Any], change: Any, 
         parse_scenario(data)
 
 
+def test_map_and_fixed_travel_are_mutually_exclusive(demo_data: dict[str, Any]) -> None:
+    demo_data["travel_time_min"] = 2.0
+
+    with pytest.raises(ConfigurationError, match="not both"):
+        parse_scenario(demo_data)
+
+
+def test_map_travel_differs_from_fixed_travel(demo_data: dict[str, Any]) -> None:
+    mapped = run_scenario(parse_scenario(demo_data))
+    demo_data.pop("laboratory_config")
+    demo_data["travel_time_min"] = 2.0
+    fixed = run_scenario(parse_scenario(demo_data))
+
+    assert mapped.tasks_completed == fixed.tasks_completed == 78
+    assert mapped.makespan != fixed.makespan
+
+
+def test_layout_must_place_every_configured_equipment(demo_data: dict[str, Any], tmp_path: Path) -> None:
+    equipment = yaml.safe_load((ROOT / "configs" / "equipment.yaml").read_text(encoding="utf-8"))
+    equipment["incubators"]["count"] = 5  # the layout only has positions for 4
+    config_path = tmp_path / "five_incubators.yaml"
+    config_path.write_text(yaml.safe_dump(equipment), encoding="utf-8")
+    demo_data["equipment_config"] = str(config_path)
+
+    with pytest.raises(ConfigurationError, match="no position for equipment \['INCUBATOR_05'\]"):
+        build_laboratory(parse_scenario(demo_data))
+
+
 def test_unknown_protocol_is_reported_with_suggestion(demo_data: dict[str, Any]) -> None:
     demo_data["experiments"][0]["protocol"] = "basic_experment"
 
