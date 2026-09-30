@@ -254,12 +254,10 @@ main items are:
 - a SiLA 2 / OPC UA-shaped device layer;
 - parallel benchmarks.
 
-## Author
-
-**Anushree Verma** ([@xnushree](https://github.com/xnushree)), IIT Mandi.
-
 ## Acknowledgements
 
-Developed with **Claude (Anthropic)** as an AI pair-programmer and mentor. Claude helped plan the
-phased architecture, write and review code and tests, and investigate the bugs described in the docs.
-Design decisions, verification of results and responsibility for the project are the author's.
+Developed with Claude (Anthropic) as an AI pair-programmer; all design decisions, testing and results were directed and verified by the author.
+
+## Author
+
+**Anushree Verma**
