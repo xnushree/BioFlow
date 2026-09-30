@@ -1,0 +1,27 @@
+# Final demonstration (Phase 30): 72 plates in four experiments with different
+# priorities and deadlines share the full lab layout; an incubator loses climate
+# control mid-run and a robot controller crashes while plates are moving.
+# Run from the project root:  python simulation/final_demo.py
+scenario: final_demo
+description: 72 plates, four experiments, an incubator failure and a robot failure.
+seed: 2026
+scheduler: fifo
+scheduling_config: configs/scheduling.yaml
+equipment_config: configs/equipment.yaml
+equipment_overrides:
+  robots: {count: 3}
+  incubators: {count: 3}
+  imaging_stations: {count: 2}
+laboratory_config: configs/laboratory.yaml
+fault_config: configs/faults.yaml
+protocol_dir: protocols
+
+experiments:
+  - {id: EXP_A, protocol: basic_experiment,   plates: 24, priority: 1, submit_at_min: 0,   deadline_min: 2760}
+  - {id: EXP_B, protocol: imaging_experiment, plates: 12, priority: 3, submit_at_min: 30,  deadline_min: 1560}
+  - {id: EXP_C, protocol: basic_experiment,   plates: 24, priority: 2, submit_at_min: 120, deadline_min: 2880}
+  - {id: EXP_D, protocol: imaging_experiment, plates: 12, priority: 5, submit_at_min: 240, deadline_min: 1680}
+
+faults:
+  - {type: ROBOT_FAILURE,     equipment: ROBOT_02,     at_min: 35, duration_min: 60,  severity: HIGH}
+  - {type: INCUBATOR_FAILURE, equipment: INCUBATOR_01, at_min: 900, duration_min: 240, severity: CRITICAL}
