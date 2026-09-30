@@ -142,11 +142,27 @@ class Dispatcher:
             resources=self._resources,
             travel=self._travel,
         )
-        for task in self._scheduler.order(self._state.tasks.ready_tasks(), view):
+        ready = self._state.tasks.ready_tasks()
+        robots_free = bool(self._resources.available_robots())
+        if not robots_free:
+            # With every robot busy, only tasks that can run where their plate already is can start;
+            # skip ordering and checking the rest (a large backlog would make every pass O(queue)).
+            ready = [task for task in ready if self._runs_in_place(task)]
+        for task in self._scheduler.order(ready, view):
             # A task started earlier in this pass may have used the last robot or slot,
             # so feasibility is re-checked for each task rather than computed once.
-            if task.status is TaskStatus.READY:
-                self._try_start(task, view)
+            if task.status is not TaskStatus.READY:
+                continue
+            if not robots_free and not self._runs_in_place(task):
+                continue
+            if self._try_start(task, view):
+                robots_free = bool(self._resources.available_robots())
+
+    def _runs_in_place(self, task: Task) -> bool:
+        plate = self._state.plate(task.plate_id)
+        current = self._state.equipment.get(plate.location_id or "")
+        return current is not None and current.kind is EQUIPMENT_FOR_OPERATION[task.operation] \
+            and current.is_operational and plate.plate_id not in self._active
 
     def _try_start(self, task: Task, view: SchedulingView) -> bool:
         plate = self._state.plate(task.plate_id)

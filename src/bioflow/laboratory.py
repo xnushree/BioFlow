@@ -33,7 +33,9 @@ from bioflow.scheduling.base_scheduler import Scheduler
 
 EXPERIMENT_ARRIVAL = "EXPERIMENT_ARRIVAL"
 DEFERRED_EVENT = "EXPERIMENT_DEFERRED"  # payload: experiment_id, reason, retry_in_min
+REJECTED_EVENT = "EXPERIMENT_REJECTED"  # payload: experiment_id, reason
 ARRIVAL_RETRY_MIN = 5.0
+MAX_ARRIVAL_WAIT_MIN = 7 * 24 * 60.0  # give up on a delivery that could not be accepted for a week
 SOURCE_ID = "LABORATORY"
 
 
@@ -56,6 +58,7 @@ class Laboratory:
         """
         self.engine = SimulationEngine(seed=seed)
         self.layout = layout
+        self.rejected: dict[str, str] = {}  # experiment_id -> why its delivery was never accepted
         self.motion: MotionController
         if layout is None:
             self.motion = TimedMotion(self.engine, travel)
@@ -84,7 +87,7 @@ class Laboratory:
         self.monitor = EquipmentMonitor(
             self.engine, equipment, self.engine.rng, fault_config.monitoring,
             other_events_pending=lambda: self.engine.pending_count > 0,
-            work_remaining=lambda: any(not task.is_terminal for task in self.state.tasks),
+            work_remaining=lambda: self.state.tasks.unfinished_count > 0,
         )
 
     def _expected_transport_factory(self, travel: TravelTimeModel) -> ExpectedTransport:
@@ -100,7 +103,7 @@ class Laboratory:
         """Submit ``experiment`` when simulation time reaches its ``submitted_at``."""
         self.engine.schedule_at(
             experiment.submitted_at, EXPERIMENT_ARRIVAL, SOURCE_ID,
-            lambda event: self._arrive(experiment),
+            lambda event: self._arrive(experiment, first_attempt=experiment.submitted_at),
             payload={"experiment_id": experiment.experiment_id},
         )
         self.monitor.start()
@@ -111,17 +114,24 @@ class Laboratory:
         self.monitor.start()
         return fault
 
-    def _arrive(self, experiment: Experiment) -> None:
+    def _arrive(self, experiment: Experiment, first_attempt: float) -> None:
         try:
             self.dispatcher.submit(experiment)
         except CapacityExceededError as error:
+            if self.engine.now - first_attempt >= MAX_ARRIVAL_WAIT_MIN:
+                # Retrying forever would keep the simulation busy without progress (a livelock).
+                reason = f"not accepted within {MAX_ARRIVAL_WAIT_MIN / 1440:g} days: {error}"
+                self.rejected[experiment.experiment_id] = reason
+                self.engine.publish(REJECTED_EVENT, SOURCE_ID,
+                                    payload={"experiment_id": experiment.experiment_id, "reason": reason})
+                return
             # Storage cannot take the plates right now (full, or out of service after a fault).
             # Like a delivery waiting at a closed loading dock: try again shortly instead of failing.
             self.engine.publish(DEFERRED_EVENT, SOURCE_ID, payload={
                 "experiment_id": experiment.experiment_id, "reason": str(error), "retry_in_min": ARRIVAL_RETRY_MIN,
             })
             self.engine.schedule(ARRIVAL_RETRY_MIN, EXPERIMENT_ARRIVAL, SOURCE_ID,
-                                 lambda event: self._arrive(experiment),
+                                 lambda event: self._arrive(experiment, first_attempt),
                                  payload={"experiment_id": experiment.experiment_id})
         self.monitor.start()  # it may have stopped while the lab was idle
 
@@ -139,4 +149,5 @@ class Laboratory:
             if self.injector.faults else None,
             recovery=self.recovery.report() if self.recovery.recoveries else None,
             metrics=self.metrics.finalize(self.state, max(completed, default=self.engine.now)),
+            rejected=tuple(sorted(self.rejected)),
         )

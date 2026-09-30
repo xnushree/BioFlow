@@ -73,6 +73,18 @@ class ContainerEquipment(Equipment[S]):
             self._after_occupancy_change()
         return plate
 
+    def _leave_system(self, plate_id: str, location: str) -> None:
+        """The plate leaves the automated lab for good (archived off-site, or disposed of).
+
+        Its slot is freed at once. Keeping finished plates in their slots would let a long run
+        fill storage and deadlock the lab.
+        """
+        plate = self._slots.remove(plate_id)
+        plate.location_id = location
+        self._publish(EquipmentEvent.PLATE_RELEASED, plate_id=plate_id)
+        if self.is_operational:
+            self._after_occupancy_change()
+
     def _check_can_release(self, plate_id: str) -> None:
         """Raise SafetyViolationError if ``plate_id`` must not be removed now."""
 

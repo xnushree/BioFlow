@@ -186,6 +186,9 @@ class GridMotion:
         self._free_parking = list(parking)
         self._robots: dict[str, _RobotMotion] = {}
         self._waiters: dict[Cell, list[str]] = {}
+        # Paths on the fixed map never change, so each (start, goal) is planned once. Detours around
+        # other robots (planned with cells to avoid) are not cached.
+        self._path_cache: dict[tuple[Cell, Cell], tuple[Cell, ...]] = {}
         self._steps = self._waits = self._reroutes = self._deadlocks = 0
         self._repeat_deadlocks: dict[frozenset[str], int] = {}
 
@@ -284,7 +287,7 @@ class GridMotion:
             return
         if not motion.path:
             try:
-                motion.path = list(self._planner.plan(motion.cell, motion.goal).cells[1:])
+                motion.path = list(self._static_path(motion.cell, motion.goal))
             except PathNotFoundError as error:
                 raise SafetyViolationError(motion.robot_id, f"no route to goal: {error}") from error
 
@@ -298,6 +301,12 @@ class GridMotion:
             ).event_id
         else:
             self._wait(motion, next_cell)
+
+    def _static_path(self, start: Cell, goal: Cell) -> tuple[Cell, ...]:
+        key = (start, goal)
+        if key not in self._path_cache:
+            self._path_cache[key] = self._planner.plan(start, goal).cells[1:]
+        return self._path_cache[key]
 
     def _finish_step(self, motion: _RobotMotion) -> None:
         previous, motion.cell = motion.cell, motion.path.pop(0)

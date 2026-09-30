@@ -48,6 +48,7 @@ class RunSummary:
     faults: DetectionReport | None = None  # detection scorecard (runs with injected faults only)
     recovery: RecoveryReport | None = None  # what automatic recovery did (runs with detections only)
     metrics: RunMetrics | None = None  # utilization, queues, waits, throughput
+    rejected: tuple[str, ...] = ()  # experiments whose delivery was never accepted
 
     @property
     def stalled(self) -> bool:
@@ -83,6 +84,9 @@ class RunSummary:
             lines += ["", "Fault detection (scored against ground truth):", self.faults.format()]
         if self.recovery:
             lines += ["", self.recovery.format()]
+        if self.rejected:
+            lines += ["", f"REJECTED: {len(self.rejected)} experiment(s) could not be accepted: "
+                          f"{', '.join(self.rejected)}"]
         if self.stalled:
             shown = ", ".join(self.stalled_tasks[:10])
             more = f" (+{len(self.stalled_tasks) - 10} more)" if len(self.stalled_tasks) > 10 else ""
@@ -100,6 +104,7 @@ def summarize(
     faults: DetectionReport | None = None,
     recovery: RecoveryReport | None = None,
     metrics: RunMetrics | None = None,
+    rejected: tuple[str, ...] = (),
 ) -> RunSummary:
     tasks = list(state.tasks)
     completion_times = [t.completed_at for t in tasks if t.completed_at is not None]
@@ -130,4 +135,5 @@ def summarize(
         faults=faults,
         recovery=recovery,
         metrics=metrics,
+        rejected=rejected,
     )

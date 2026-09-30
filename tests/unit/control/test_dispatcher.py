@@ -37,7 +37,7 @@ def test_single_plate_follows_protocol_with_exact_timing(make_lab) -> None:
     assert summary.makespan == pytest.approx(2200.0)
     assert summary.tasks_completed == summary.tasks_total == 5
     plate = lab.state.plate("EXP001-P001")
-    assert (plate.state, plate.location_id) == (PlateState.ARCHIVED, "STORAGE_01")
+    assert (plate.state, plate.location_id) == (PlateState.ARCHIVED, "OFFSITE_ARCHIVE")
     assert lab.state.experiment("EXP001").status is ExperimentStatus.COMPLETED
 
 
@@ -119,7 +119,8 @@ def test_dispose_ends_at_waste_station(make_lab) -> None:
     lab.run()
 
     plate = lab.state.plate("EXP001-P001")
-    assert (plate.state, plate.location_id) == (PlateState.DISPOSED, "WASTE_01")
+    assert (plate.state, plate.location_id) == (PlateState.DISPOSED, "DISPOSED")
+    assert lab.resources.status("WASTE_01").occupancy == 0
 
 
 def test_experiment_waits_until_its_submission_time(make_lab) -> None:

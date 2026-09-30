@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from bioflow.core.exceptions import SafetyViolationError
 from bioflow.core.simulation import SimulationContext
 from bioflow.core.state_machine import TransitionTable
 from bioflow.domain import EquipmentKind, PlateState
 from bioflow.equipment.config import ContainerSpec
 from bioflow.equipment.container import ContainerEquipment
 from bioflow.equipment.events import EquipmentEvent
+
+
+ARCHIVE_LOCATION = "OFFSITE_ARCHIVE"  # where archived plates go when they leave the automated lab
 
 
 class StorageState(StrEnum):
@@ -35,14 +37,11 @@ class Storage(ContainerEquipment[StorageState]):
         )
 
     def archive(self, plate_id: str) -> None:
-        """Mark a stored plate as finished. It stays here, occupying its slot."""
+        """Finish a stored plate: it is checked out to the off-site archive and its slot is freed."""
         plate = self._slots.get(plate_id)
         plate.state = PlateState.ARCHIVED
         self._publish(EquipmentEvent.PLATE_ARCHIVED, plate_id=plate_id)
-
-    def _check_can_release(self, plate_id: str) -> None:
-        if self._slots.get(plate_id).state is PlateState.ARCHIVED:
-            raise SafetyViolationError(self.equipment_id, f"{plate_id} is archived and cannot be removed")
+        self._leave_system(plate_id, ARCHIVE_LOCATION)
 
     def _after_occupancy_change(self) -> None:
         self._set_state(StorageState.FULL if self._slots.is_full else StorageState.AVAILABLE)

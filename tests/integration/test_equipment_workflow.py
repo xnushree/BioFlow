@@ -83,7 +83,7 @@ def test_plate_completes_full_protocol_route(engine: SimulationEngine, make_plat
     assert engine.now == pytest.approx(5 * per_transport + processing)
 
     assert plate.state is PlateState.ARCHIVED
-    assert plate.location_id == "STORAGE_01"
+    assert plate.location_id == "OFFSITE_ARCHIVE"  # archived plates leave the automated lab
     processed = [e.payload["operation"] for e in event_log
                  if e.event_type == EquipmentEvent.PROCESSING_COMPLETED]
     assert processed == ["INCUBATE", "MEDIA_EXCHANGE", "INCUBATE", "IMAGE"]

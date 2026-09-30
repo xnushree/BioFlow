@@ -25,6 +25,10 @@ from bioflow.domain import Task, TaskStatus
 class TaskGraph:
     def __init__(self) -> None:
         self._tasks: dict[str, Task] = {}
+        # Running indexes so per-event questions never rescan every task (O(n^2) over a large run).
+        self._by_experiment: dict[str, list[Task]] = {}
+        self._unfinished: dict[str, int] = {}  # experiment -> non-terminal task count
+        self._unfinished_total = 0
         self._dependents: dict[str, set[str]] = {}
         self._unfinished_deps: dict[str, int] = {}  # only for PENDING tasks
         self._ready: dict[str, Task] = {}  # insertion-ordered READY index
@@ -58,14 +62,18 @@ class TaskGraph:
         return [self._tasks[d] for d in sorted(self._dependents[task_id])]
 
     def tasks_for(self, experiment_id: str) -> list[Task]:
-        return [t for t in self._tasks.values() if t.experiment_id == experiment_id]
+        return list(self._by_experiment.get(experiment_id, ()))
+
+    @property
+    def unfinished_count(self) -> int:
+        """Tasks not yet completed, failed or cancelled."""
+        return self._unfinished_total
 
     def progress(self, experiment_id: str) -> Counter[TaskStatus]:
         return Counter(t.status for t in self.tasks_for(experiment_id))
 
     def is_experiment_finished(self, experiment_id: str) -> bool:
-        tasks = self.tasks_for(experiment_id)
-        return bool(tasks) and all(t.is_terminal for t in tasks)
+        return experiment_id in self._unfinished and self._unfinished[experiment_id] == 0
 
     # ------------------------------------------------------------ construction
     def add_tasks(self, tasks: Iterable[Task], now: float = 0.0) -> list[Task]:
@@ -83,6 +91,11 @@ class TaskGraph:
 
         for task in batch:
             self._tasks[task.task_id] = task
+            self._by_experiment.setdefault(task.experiment_id, []).append(task)
+            self._unfinished.setdefault(task.experiment_id, 0)
+            if not task.is_terminal:
+                self._unfinished[task.experiment_id] += 1
+                self._unfinished_total += 1
             self._dependents[task.task_id] = set()
         for task in batch:
             for dep in task.depends_on:
@@ -135,6 +148,7 @@ class TaskGraph:
         task = self.get(task_id)
         task.status = TaskStatus.COMPLETED
         task.completed_at = now
+        self._finished(task)
         newly_ready = []
         for dep_id in sorted(self._dependents[task_id]):
             if dep_id not in self._unfinished_deps:
@@ -163,6 +177,7 @@ class TaskGraph:
         task = self.get(task_id)
         task.status = TaskStatus.FAILED
         task.completed_at = now
+        self._finished(task)
         return self._cancel_descendants(task_id)
 
     def cancel(self, task_id: str) -> list[Task]:
@@ -178,8 +193,13 @@ class TaskGraph:
         self._unfinished_deps.pop(task.task_id, None)
         self._ready[task.task_id] = task
 
+    def _finished(self, task: Task) -> None:
+        self._unfinished[task.experiment_id] -= 1
+        self._unfinished_total -= 1
+
     def _cancel_one(self, task: Task) -> None:
         task.status = TaskStatus.CANCELLED
+        self._finished(task)
         self._ready.pop(task.task_id, None)
         self._unfinished_deps.pop(task.task_id, None)
 

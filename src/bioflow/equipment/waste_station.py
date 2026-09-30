@@ -4,14 +4,20 @@ from __future__ import annotations
 
 from bioflow.core.exceptions import SafetyViolationError
 from bioflow.core.simulation import SimulationContext
-from bioflow.domain import EquipmentKind, PlateState
+from bioflow.domain import EquipmentKind, Plate, PlateState
 from bioflow.equipment.config import ContainerSpec
 from bioflow.equipment.container import ContainerEquipment
 from bioflow.equipment.storage import STORAGE_TRANSITIONS, StorageState
 
 
+DISPOSED_LOCATION = "DISPOSED"
+
+
 class WasteStation(ContainerEquipment[StorageState]):
-    """Uses the same AVAILABLE/FULL states as storage."""
+    """Plates placed here are disposed of and leave the lab; capacity is the drop-off buffer.
+
+    Uses the same AVAILABLE/FULL states as storage.
+    """
 
     placed_plate_state = PlateState.DISPOSED
     transitions = STORAGE_TRANSITIONS
@@ -20,6 +26,10 @@ class WasteStation(ContainerEquipment[StorageState]):
         super().__init__(
             equipment_id, EquipmentKind.WASTE_STATION, context, StorageState.AVAILABLE, spec.capacity
         )
+
+    def receive(self, plate: Plate) -> None:
+        super().receive(plate)
+        self._leave_system(plate.plate_id, DISPOSED_LOCATION)
 
     def _check_can_release(self, plate_id: str) -> None:
         raise SafetyViolationError(self.equipment_id, f"{plate_id} has been disposed and cannot be removed")
