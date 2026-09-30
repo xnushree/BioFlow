@@ -8,7 +8,7 @@ import pytest
 from bioflow.core.events import Event
 from bioflow.core.exceptions import UnknownEntityError, ValidationError
 from bioflow.core.simulation import SimulationEngine
-from bioflow.domain import EquipmentKind, Operation, PlateState
+from bioflow.domain import EquipmentKind, Operation
 from bioflow.equipment import EquipmentEvent, Incubator, ProcessingStation, Robot, Storage, TransportJob
 from bioflow.equipment.config import ContainerSpec, IncubatorSpec, RobotSpec, StationSpec
 from bioflow.faults.fault import Fault, FaultSpec, FaultStatus, FaultType, Severity

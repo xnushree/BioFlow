@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from bioflow.api.dependencies import service
+from bioflow.api.dependencies import Service
 from bioflow.faults.fault import FaultSpec, FaultType, Severity
-from bioflow.service import SimulationService
 
 router = APIRouter(tags=["faults"])
 
@@ -24,13 +23,13 @@ class InjectRequest(BaseModel):
 
 
 @router.get("/faults")
-def list_faults(svc: SimulationService = Depends(service)) -> dict[str, list[dict[str, Any]]]:
+def list_faults(svc: Service) -> dict[str, list[dict[str, Any]]]:
     """Detections and recoveries (what the control system knows), plus labelled injected ground truth."""
     return svc.faults()
 
 
 @router.post("/faults/inject", status_code=201)
-def inject_fault(request: InjectRequest, svc: SimulationService = Depends(service)) -> dict[str, Any]:
+def inject_fault(request: InjectRequest, svc: Service) -> dict[str, Any]:
     spec = FaultSpec(
         fault_type=request.type, equipment_id=request.equipment, start_min=0.0,
         duration_min=request.duration_min, severity=request.severity, magnitude=request.magnitude,

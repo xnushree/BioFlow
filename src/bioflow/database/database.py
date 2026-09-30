@@ -23,7 +23,11 @@ class Database:
         self._connection = sqlite3.connect(self.path)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
-        self._initialize()
+        try:
+            self._initialize()
+        except BaseException:
+            self._connection.close()  # don't leak the connection when the database is rejected
+            raise
 
     def _initialize(self) -> None:
         with self.transaction() as connection:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from bioflow.core.exceptions import (
@@ -33,6 +35,10 @@ _STATUS_FOR_ERROR: list[tuple[type[BioFlowError], int]] = [
 
 def service(request: Request) -> SimulationService:
     return request.app.state.service
+
+
+# The live simulation service, injected into route handlers (FastAPI's Annotated dependency style).
+Service = Annotated[SimulationService, Depends(service)]
 
 
 def install_error_handlers(app: FastAPI) -> None:

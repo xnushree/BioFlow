@@ -15,3 +15,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Correctness-focused: pyflakes (unused/undefined names), syntax errors, and bugbear.
+select = ["F", "E9", "B"]

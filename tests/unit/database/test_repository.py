@@ -1,6 +1,7 @@
 """Tests for SQLite persistence through the repository."""
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,10 @@ PROTOCOL = Protocol("p", "HEK293", (
 
 
 @pytest.fixture
-def repo() -> RunRepository:
-    return RunRepository(Database())  # in memory
+def repo() -> Iterator[RunRepository]:
+    database = Database()  # in memory
+    yield RunRepository(database)
+    database.close()
 
 
 @pytest.fixture
@@ -135,7 +138,7 @@ def test_failed_save_leaves_nothing_behind(repo: RunRepository, make_lab) -> Non
     assert repo.runs() == []  # the whole run was rolled back
 
 
-def test_database_file_persists_and_checks_schema_version(tmp_path: Path, save_run, repo: RunRepository) -> None:
+def test_database_file_persists_and_checks_schema_version(tmp_path: Path) -> None:
     path = tmp_path / "runs.db"
     with Database(path) as database:
         database.connection.execute("UPDATE schema_version SET version = 99")

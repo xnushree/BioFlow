@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from bioflow.api.dependencies import service
-from bioflow.service import SimulationService
+from bioflow.api.dependencies import Service
 
 router = APIRouter(tags=["experiments"])
 
@@ -22,22 +21,21 @@ class ExperimentRequest(BaseModel):
 
 
 @router.get("/experiments")
-def list_experiments(svc: SimulationService = Depends(service)) -> list[dict[str, Any]]:
+def list_experiments(svc: Service) -> list[dict[str, Any]]:
     return svc.experiments()
 
 
 @router.post("/experiments", status_code=201)
-def submit_experiment(request: ExperimentRequest, svc: SimulationService = Depends(service)) -> dict[str, Any]:
+def submit_experiment(request: ExperimentRequest, svc: Service) -> dict[str, Any]:
     return svc.submit_experiment(request.experiment_id, request.protocol, request.plates,
                                  request.priority, request.deadline_in_min)
 
 
 @router.get("/experiments/{experiment_id}")
-def get_experiment(experiment_id: str, svc: SimulationService = Depends(service)) -> dict[str, Any]:
+def get_experiment(experiment_id: str, svc: Service) -> dict[str, Any]:
     return svc.experiment(experiment_id)
 
 
 @router.get("/plates")
-def list_plates(experiment_id: str | None = None, state: str | None = None,
-                svc: SimulationService = Depends(service)) -> list[dict[str, Any]]:
+def list_plates(svc: Service, experiment_id: str | None = None, state: str | None = None) -> list[dict[str, Any]]:
     return svc.plates(experiment_id, state)
